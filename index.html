@@ -5,7 +5,6 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Surveillance Census</title>
 
-  <!-- Leaflet -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <script src="https://unpkg.com/leaflet-heat@0.2.0/dist/leaflet-heat.js"></script>
@@ -13,12 +12,25 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; user-select: none; -webkit-touch-callout: none; }
     body { background: #0a0a0a; color: white; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
-    #header { padding: 12px 16px; background: #1a1a1a; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #333; flex-shrink: 0; z-index: 10; }
-    #header h1 { font-size: 17px; font-weight: 600; }
+
+    /* Header with back button */
+    #header { padding: 12px 16px; background: #1a1a1a; display: flex; align-items: center; border-bottom: 1px solid #333; flex-shrink: 0; z-index: 10; gap: 12px; }
+    #header h1 { font-size: 17px; font-weight: 600; flex: 1; }
     #header h1 span { color: #60a5fa; }
-    #modeToggle { background: #2a2a2a; border: 1px solid #444; color: white; padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 13px; transition: 0.2s; }
-    #modeToggle.active { background: #2563eb; border-color: #2563eb; }
+    .back-btn { background: #2a2a2a; border: 1px solid #444; color: white; padding: 4px 12px; border-radius: 16px; cursor: pointer; font-size: 14px; display: none; }
+    .back-btn:hover { background: #3a3a3a; }
+
     #viewContainer { flex: 1; position: relative; overflow: hidden; background: #111; }
+
+    /* --- HOME VIEW --- */
+    #homeView { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 24px; padding: 20px; }
+    #homeView.active { display: flex; }
+    #homeView h2 { font-size: 22px; font-weight: 400; color: #ccc; }
+    .home-btn { width: 80%; max-width: 300px; padding: 20px; border: none; border-radius: 16px; font-size: 20px; font-weight: 600; cursor: pointer; transition: 0.2s; }
+    .home-btn.camera { background: #2563eb; color: white; }
+    .home-btn.camera:hover { background: #1d4ed8; }
+    .home-btn.map { background: #2a2a2a; color: white; border: 1px solid #444; }
+    .home-btn.map:hover { background: #3a3a3a; }
 
     /* --- CAPTURE VIEW --- */
     #captureView { display: none; flex-direction: column; height: 100%; width: 100%; position: relative; background: #000; }
@@ -59,10 +71,10 @@
     #previewControls .retake { background: #444; color: white; }
     #previewControls .crop { background: #2563eb; color: white; }
 
-    /* --- CROP VIEW --- */
+    /* --- CROP VIEW (flicker‑free) --- */
     #cropView { display: none; flex-direction: column; height: 100%; width: 100%; background: #000; }
     #cropView.active { display: flex; }
-    #cropView .crop-container { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; }
+    #cropView .crop-container { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; background: #000; }
     #cropView .crop-container canvas { max-width: 100%; max-height: 100%; touch-action: none; cursor: crosshair; }
     #cropControls { display: flex; gap: 12px; padding: 16px; background: #1a1a1a; justify-content: center; }
     #cropControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; }
@@ -86,14 +98,21 @@
 <body>
 
 <div id="header">
+  <button class="back-btn" id="backBtn">← Back</button>
   <h1>📷 <span>Surveillance</span> Census</h1>
-  <button id="modeToggle">🗺️ Admin</button>
 </div>
 
 <div id="viewContainer">
 
+  <!-- HOME -->
+  <div id="homeView" class="active">
+    <h2>What do you want to do?</h2>
+    <button class="home-btn camera" id="goCameraBtn">📸 Take Photos</button>
+    <button class="home-btn map" id="goMapBtn">🗺️ View Map</button>
+  </div>
+
   <!-- CAPTURE -->
-  <div id="captureView" class="active">
+  <div id="captureView">
     <video id="videoPreview" autoplay playsinline></video>
     <div id="captureStatus">📸 Tap "Open Camera" to start</div>
     <button id="openCameraBtn">📸 Open Camera</button>
@@ -140,25 +159,23 @@
 <script type="module">
 import { createClient } from '@supabase/supabase-js';
 
-// ============================================================
-// 🔥 CONFIG
-// ============================================================
 const supabaseUrl = "https://wswpmifhidycyaseamyf.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indzd3BtaWZoaWR5Y3lhc2VhbXlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5Mjc5MzQsImV4cCI6MjEwMjUwMzkzNH0.zr1Kibn5R6UEz8TEm1KwqBpTfSxNA6Di-eFhic17kR8";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// ============================================================
-// DOM refs
-// ============================================================
-const video = document.getElementById('videoPreview');
-const canvas = document.getElementById('cropCanvas');
-const ctx = canvas.getContext('2d');
-
+// --- DOM refs ---
+const homeView = document.getElementById('homeView');
 const captureView = document.getElementById('captureView');
 const previewView = document.getElementById('previewView');
 const cropView = document.getElementById('cropView');
 const mapView = document.getElementById('mapView');
+const backBtn = document.getElementById('backBtn');
+const goCameraBtn = document.getElementById('goCameraBtn');
+const goMapBtn = document.getElementById('goMapBtn');
 
+const video = document.getElementById('videoPreview');
+const canvas = document.getElementById('cropCanvas');
+const ctx = canvas.getContext('2d');
 const openCameraBtn = document.getElementById('openCameraBtn');
 const shutterBtn = document.getElementById('shutterBtn');
 const captureStatus = document.getElementById('captureStatus');
@@ -169,27 +186,51 @@ const cancelCropBtn = document.getElementById('cancelCropBtn');
 const confirmCropBtn = document.getElementById('confirmCropBtn');
 const cropStatus = document.getElementById('cropStatus');
 const status = document.getElementById('status');
-
-const modeToggle = document.getElementById('modeToggle');
 const mapContainer = document.getElementById('map');
 const heatmapToggle = document.getElementById('heatmapToggle');
 const pinCount = document.getElementById('pinCount');
 
 let stream = null;
-let capturedImageData = null;      // raw ImageData (full frame)
-let croppedBlob = null;           // final blob to upload
+let capturedImageData = null;
+let croppedBlob = null;
 let map = null;
 let markerLayer = null;
 let heatLayer = null;
 let isHeatmapOn = false;
 let allPins = [];
-
-// crop state
 let cropStart = null, cropEnd = null, isCropping = false;
 
-// ============================================================
-// 1. CAMERA
-// ============================================================
+// --- Navigation ---
+function showView(viewId) {
+  [homeView, captureView, previewView, cropView, mapView].forEach(v => v.classList.remove('active'));
+  document.getElementById(viewId).classList.add('active');
+  if (viewId === 'homeView') backBtn.style.display = 'none';
+  else backBtn.style.display = 'inline-block';
+}
+
+goCameraBtn.addEventListener('click', () => {
+  showView('captureView');
+  // If camera not started, auto-start
+  if (!stream) startCamera();
+  else { video.srcObject = stream; video.play(); captureStatus.textContent = '📷 Ready'; }
+});
+
+goMapBtn.addEventListener('click', () => {
+  showView('mapView');
+  if (!map) initMap();
+  else map.invalidateSize();
+});
+
+backBtn.addEventListener('click', () => {
+  // If in capture, stop camera to save battery
+  if (captureView.classList.contains('active') && stream) {
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+  }
+  showView('homeView');
+});
+
+// --- Camera ---
 async function startCamera() {
   try {
     captureStatus.textContent = '📸 Requesting camera...';
@@ -201,19 +242,15 @@ async function startCamera() {
     captureStatus.textContent = '📷 Frame the camera and tap the shutter';
     openCameraBtn.style.display = 'none';
     shutterBtn.style.display = 'block';
-    return true;
   } catch (err) {
     captureStatus.textContent = '❌ ' + err.message;
     status.textContent = '❌ Camera error: ' + err.message;
-    return false;
   }
 }
 
 openCameraBtn.addEventListener('click', startCamera);
 
-// ============================================================
-// 2. SHUTTER (take photo)
-// ============================================================
+// --- Shutter ---
 shutterBtn.addEventListener('click', () => {
   const w = video.videoWidth || 1280;
   const h = video.videoHeight || 720;
@@ -223,44 +260,35 @@ shutterBtn.addEventListener('click', () => {
   const tctx = tmpCanvas.getContext('2d');
   tctx.drawImage(video, 0, 0, w, h);
   capturedImageData = tctx.getImageData(0, 0, w, h);
-
-  // Show preview
   const dataUrl = tmpCanvas.toDataURL('image/jpeg', 0.95);
   previewImg.src = dataUrl;
-  switchView('preview');
+  showView('previewView');
 });
 
-// ============================================================
-// 3. PREVIEW -> CROP or RETAKE
-// ============================================================
+// --- Preview ---
 retakeBtn.addEventListener('click', () => {
-  switchView('capture');
-  // restart video if needed
-  if (stream) {
-    video.srcObject = stream;
-    video.play();
-    captureStatus.textContent = '📷 Retake — frame it again';
-  }
+  showView('captureView');
+  if (stream) { video.srcObject = stream; video.play(); captureStatus.textContent = '📷 Retake — frame it again'; }
 });
 
 cropBtn.addEventListener('click', () => {
-  // load image into crop canvas
+  // Load image into crop canvas
   const img = new Image();
   img.onload = () => {
+    // Store the original image as an Image object for flicker-free drawing
     canvas.width = img.width;
     canvas.height = img.height;
     ctx.drawImage(img, 0, 0);
-    capturedImageData = ctx.getImageData(0, 0, img.width, img.height);
+    // Store the image object for redraw
+    canvas._img = img;
     cropStart = null; cropEnd = null;
     cropStatus.textContent = '✂️ Drag a rectangle around the camera';
-    switchView('crop');
+    showView('cropView');
   };
   img.src = previewImg.src;
 });
 
-// ============================================================
-// 4. CROP (draggable rectangle)
-// ============================================================
+// --- Flicker-free crop (uses drawImage) ---
 function getCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -271,31 +299,44 @@ function getCanvasCoords(e) {
   return { x: Math.min(Math.max(x, 0), canvas.width), y: Math.min(Math.max(y, 0), canvas.height) };
 }
 
-function drawCropRect() {
+function drawCropOverlay() {
+  if (!canvas._img) return;
+  // Redraw the original image
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  ctx.drawImage(canvas._img, 0, 0, canvas.width, canvas.height);
   if (!cropStart || !cropEnd) return;
-  ctx.putImageData(capturedImageData, 0, 0);
+
   const sx = Math.min(cropStart.x, cropEnd.x);
   const sy = Math.min(cropStart.y, cropEnd.y);
   const sw = Math.abs(cropEnd.x - cropStart.x);
   const sh = Math.abs(cropEnd.y - cropStart.y);
+
+  // Dark overlay outside the selection
+  ctx.fillStyle = 'rgba(0,0,0,0.5)';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Clear the selected area (reveal the image)
+  ctx.clearRect(sx, sy, sw, sh);
+  // Redraw the selected portion on top (for crispness)
+  ctx.drawImage(canvas._img, sx, sy, sw, sh, sx, sy, sw, sh);
+  // Draw a bright border around the selection
   ctx.strokeStyle = '#00ff88';
   ctx.lineWidth = 3;
   ctx.strokeRect(sx, sy, sw, sh);
-  ctx.fillStyle = 'rgba(0,255,136,0.1)';
-  ctx.fillRect(sx, sy, sw, sh);
 }
 
+// Mouse events
 canvas.addEventListener('mousedown', (e) => {
   isCropping = true;
   const p = getCanvasCoords(e);
   cropStart = { x: p.x, y: p.y };
   cropEnd = { x: p.x, y: p.y };
+  drawCropOverlay();
 });
 window.addEventListener('mousemove', (e) => {
   if (!isCropping) return;
   const p = getCanvasCoords(e);
   cropEnd = { x: p.x, y: p.y };
-  drawCropRect();
+  drawCropOverlay();
 });
 window.addEventListener('mouseup', () => {
   if (isCropping) {
@@ -306,9 +347,9 @@ window.addEventListener('mouseup', () => {
       if (w < 10 || h < 10) {
         cropStatus.textContent = '⚠️ Selection too small, try again';
         cropStart = null; cropEnd = null;
-        ctx.putImageData(capturedImageData, 0, 0);
+        drawCropOverlay();
       } else {
-        cropStatus.textContent = '✅ Selection ready. Tap "Crop & Upload"';
+        cropStatus.textContent = '✅ Ready. Tap "Crop & Upload"';
       }
     }
   }
@@ -321,13 +362,14 @@ canvas.addEventListener('touchstart', (e) => {
   const p = getCanvasCoords(e);
   cropStart = { x: p.x, y: p.y };
   cropEnd = { x: p.x, y: p.y };
+  drawCropOverlay();
 }, { passive: false });
 window.addEventListener('touchmove', (e) => {
   if (!isCropping) return;
   e.preventDefault();
   const p = getCanvasCoords(e);
   cropEnd = { x: p.x, y: p.y };
-  drawCropRect();
+  drawCropOverlay();
 }, { passive: false });
 window.addEventListener('touchend', (e) => {
   if (isCropping) {
@@ -338,56 +380,41 @@ window.addEventListener('touchend', (e) => {
       if (w < 10 || h < 10) {
         cropStatus.textContent = '⚠️ Selection too small, try again';
         cropStart = null; cropEnd = null;
-        ctx.putImageData(capturedImageData, 0, 0);
+        drawCropOverlay();
       } else {
-        cropStatus.textContent = '✅ Selection ready. Tap "Crop & Upload"';
+        cropStatus.textContent = '✅ Ready. Tap "Crop & Upload"';
       }
     }
   }
 }, { passive: false });
 
-// ============================================================
-// 5. CONFIRM CROP -> UPLOAD
-// ============================================================
+// --- Confirm crop (clean drawImage) ---
 confirmCropBtn.addEventListener('click', async () => {
-  if (!cropStart || !cropEnd) {
-    cropStatus.textContent = '⚠️ Drag a rectangle first!';
-    return;
-  }
+  if (!cropStart || !cropEnd) { cropStatus.textContent = '⚠️ Drag a rectangle first!'; return; }
   const sx = Math.min(cropStart.x, cropEnd.x);
   const sy = Math.min(cropStart.y, cropEnd.y);
   const sw = Math.abs(cropEnd.x - cropStart.x);
   const sh = Math.abs(cropEnd.y - cropStart.y);
-  if (sw < 10 || sh < 10) {
-    cropStatus.textContent = '⚠️ Selection too small';
-    return;
-  }
+  if (sw < 10 || sh < 10) { cropStatus.textContent = '⚠️ Selection too small'; return; }
 
   cropStatus.textContent = '✂️ Cropping...';
   const cropCanvas = document.createElement('canvas');
   cropCanvas.width = sw;
   cropCanvas.height = sh;
   const cctx = cropCanvas.getContext('2d');
-  cctx.putImageData(capturedImageData, 0, 0);
-  const imageData = cctx.getImageData(sx, sy, sw, sh);
-  cropCanvas.width = sw;
-  cropCanvas.height = sh;
-  cctx.putImageData(imageData, 0, 0);
-
+  // Use drawImage to crop crisply from the stored image
+  cctx.drawImage(canvas._img, sx, sy, sw, sh, 0, 0, sw, sh);
   cropCanvas.toBlob(async (blob) => {
     if (!blob) { cropStatus.textContent = '❌ Crop failed'; return; }
-    croppedBlob = blob;
     await uploadPhoto(blob);
   }, 'image/jpeg', 0.92);
 });
 
 cancelCropBtn.addEventListener('click', () => {
-  switchView('preview');
+  showView('previewView');
 });
 
-// ============================================================
-// 6. UPLOAD to Supabase (using 'intel' table & bucket)
-// ============================================================
+// --- Upload (already working, no changes needed) ---
 async function uploadPhoto(blob) {
   status.textContent = '📍 Getting GPS...';
   const pos = await getPosition();
@@ -414,22 +441,18 @@ async function uploadPhoto(blob) {
     if (insertError) throw insertError;
 
     status.textContent = `✅ Uploaded! (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`;
-    // reset UI
-    croppedBlob = null;
+    // Reset UI
     cropStart = null; cropEnd = null;
     if (map) loadPins();
-    switchView('capture');
-    // restart camera stream
-    if (stream) { video.srcObject = stream; video.play(); captureStatus.textContent = '📷 Ready — take another!'; }
+    showView('homeView');
+    // Release camera
+    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   } catch (err) {
     status.textContent = '❌ Error: ' + err.message;
     cropStatus.textContent = '❌ ' + err.message;
   }
 }
 
-// ============================================================
-// 7. GPS helper
-// ============================================================
 function getPosition() {
   return new Promise((resolve) => {
     if (!navigator.geolocation) {
@@ -444,21 +467,7 @@ function getPosition() {
   });
 }
 
-// ============================================================
-// 8. VIEW SWITCHER
-// ============================================================
-function switchView(view) {
-  captureView.classList.remove('active');
-  previewView.classList.remove('active');
-  cropView.classList.remove('active');
-  if (view === 'capture') captureView.classList.add('active');
-  else if (view === 'preview') previewView.classList.add('active');
-  else if (view === 'crop') cropView.classList.add('active');
-}
-
-// ============================================================
-// 9. ADMIN MAP (using 'intel' table)
-// ============================================================
+// --- Map (Admin) ---
 function initMap() {
   map = L.map(mapContainer).setView([18.4861, -69.9312], 13);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
@@ -502,32 +511,8 @@ function toggleHeatmap() {
 }
 heatmapToggle.addEventListener('click', toggleHeatmap);
 
-// ============================================================
-// 10. MODE TOGGLE (Capture / Admin)
-// ============================================================
-modeToggle.addEventListener('click', () => {
-  const isAdmin = mapView.classList.contains('active');
-  if (isAdmin) {
-    mapView.classList.remove('active');
-    modeToggle.textContent = '🗺️ Admin';
-    modeToggle.classList.remove('active');
-    switchView('capture');
-    if (stream) { video.srcObject = stream; video.play(); captureStatus.textContent = '📷 Back to camera'; }
-  } else {
-    mapView.classList.add('active');
-    modeToggle.textContent = '📷 Capture';
-    modeToggle.classList.add('active');
-    captureView.classList.remove('active');
-    previewView.classList.remove('active');
-    cropView.classList.remove('active');
-    if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
-    if (!map) initMap();
-    else map.invalidateSize();
-  }
-});
-
-status.textContent = '🔵 App loaded. Tap "Open Camera" to start.';
-console.log('✅ Surveillance Census ready.');
+status.textContent = '🔵 App ready. Choose an option.';
+console.log('✅ Surveillance Census with menu and smooth crop.');
 </script>
 </body>
 </html>
