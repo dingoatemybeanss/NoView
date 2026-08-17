@@ -1,8 +1,8 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { createClient } from '@supabase/supabase-js';
 
-// --- Firebase config (your actual keys) ---
+// --- Firebase config (your keys) ---
 const firebaseConfig = {
   apiKey: "AIzaSyCKaSaIEcfiavKQxcgONvQ_efokk6M36-w",
   authDomain: "spiderman-e0fcf.firebaseapp.com",
@@ -15,13 +15,14 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 const auth = getAuth(app);
+const provider = new GoogleAuthProvider();
 
-// --- Supabase config (unchanged) ---
+// --- Supabase config ---
 const supabaseUrl = "https://wswpmifhidycyaseamyf.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indzd3BtaWZoaWR5Y3lhc2VhbXlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5Mjc5MzQsImV4cCI6MjEwMjUwMzkzNH0.zr1Kibn5R6UEz8TEm1KwqBpTfSxNA6Di-eFhic17kR8";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// --- DOM refs (same as before) ---
+// --- DOM refs ---
 const homeView = document.getElementById('homeView');
 const captureView = document.getElementById('captureView');
 const previewView = document.getElementById('previewView');
@@ -43,6 +44,7 @@ const authEmail = document.getElementById('authEmail');
 const authPassword = document.getElementById('authPassword');
 const authSignin = document.getElementById('authSignin');
 const authSignup = document.getElementById('authSignup');
+const authGoogle = document.getElementById('authGoogle');
 const authClose = document.getElementById('authClose');
 const authError = document.getElementById('authError');
 
@@ -141,10 +143,23 @@ authSignup.addEventListener('click', async () => {
   }
 });
 
+authGoogle.addEventListener('click', async () => {
+  try {
+    await signInWithPopup(auth, provider);
+    closeAuthModal();
+  } catch (err) {
+    authError.textContent = err.message;
+  }
+});
+
+// Admin only for specific UID
+const ADMIN_UID = "kc9YdMnlpfNUvmPCaVXZjrYxImx2";
+
 onAuthStateChanged(auth, (user) => {
   currentUser = user;
   updateAuthUI();
-  if (currentUser) goAdminBtn.style.display = 'inline-flex';
+  const isAdmin = user && user.uid === ADMIN_UID;
+  if (isAdmin) goAdminBtn.style.display = 'inline-flex';
   else goAdminBtn.style.display = 'none';
   if (map) loadPins();
 });
@@ -175,7 +190,8 @@ function showView(viewId) {
   document.getElementById(viewId).classList.add('active');
   if (viewId === 'homeView') backBtn.style.display = 'none';
   else backBtn.style.display = 'inline-block';
-  if (viewId === 'adminView' && currentUser) loadAdminPanel();
+  if (viewId === 'adminView' && currentUser && currentUser.uid === ADMIN_UID) loadAdminPanel();
+  else if (viewId === 'adminView') { alert('Admin access restricted.'); showView('homeView'); }
   if (viewId === 'mapView' && !map) initMap();
   else if (viewId === 'mapView' && map) map.invalidateSize();
 }
@@ -197,7 +213,7 @@ backBtn.addEventListener('click', () => {
   showView('homeView');
 });
 
-// --- CAMERA (unchanged from previous) ---
+// --- CAMERA ---
 async function startCamera() {
   try {
     captureStatus.textContent = '📸 Requesting camera...';
@@ -477,18 +493,21 @@ function setLocationToInput(input) {
 startLocBtn.addEventListener('click', () => setLocationToInput(routeStart));
 endLocBtn.addEventListener('click', () => setLocationToInput(routeEnd));
 
-// --- MAP (chill tiles, removed zoom controls) ---
+// --- MAP (with fixed icons) ---
 function initMap() {
   map = L.map(mapContainer, { zoomControl: false }).setView([18.4861, -69.9312], 14);
-  // Chill, light tile layer (CartoDB Voyager)
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '© OpenStreetMap, CartoDB'
   }).addTo(map);
 
-  const clusterIcon = (cluster) => L.divIcon({
-    html: `<div style="background:#2563eb;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 0 0 3px #0a0a0a;">${cluster.getChildCount()}</div>`,
-    className: '', iconSize: [40, 40]
-  });
+  const clusterIcon = (cluster) => {
+    const count = cluster.getChildCount();
+    return L.divIcon({
+      html: `<div style="background:#2563eb;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 0 0 3px #0a0a0a;">${count}</div>`,
+      className: '',
+      iconSize: [40, 40]
+    });
+  };
   markerCluster = L.markerClusterGroup({ iconCreateFunction: clusterIcon, spiderfyOnMaxZoom: true, maxClusterRadius: 50 });
   map.addLayer(markerCluster);
 
@@ -520,7 +539,7 @@ function updateCoverage() {
   trackLayer = polyline.addTo(map);
 }
 
-// --- Load pins (public aggregation) ---
+// --- Load pins (with camera icon fixed) ---
 async function loadPins() {
   if (!map) return;
   markerCluster.clearLayers();
@@ -532,7 +551,14 @@ async function loadPins() {
     data.forEach((row) => {
       if (!row.lat || !row.lng) return;
       allPins.push({ lat: row.lat, lng: row.lng, imageUrl: row.image_url, timestamp: row.timestamp, camera_type: row.camera_type });
-      const marker = L.marker([row.lat, row.lng], { icon: L.divIcon({ html: '📷', className: '', iconSize: [24, 24], iconAnchor: [12, 12] }) });
+      const marker = L.marker([row.lat, row.lng], {
+        icon: L.divIcon({
+          html: '📷',
+          className: '',
+          iconSize: [24, 24],
+          iconAnchor: [12, 12]
+        })
+      });
       marker.bindPopup(`<div class="custom-popup"><strong>${row.timestamp ? new Date(row.timestamp).toLocaleString() : 'N/A'}</strong><br/>${row.camera_type ? 'Type: ' + row.camera_type : ''}<br/><img src="${row.image_url}" alt="camera" /></div>`);
       markerCluster.addLayer(marker);
     });
@@ -542,7 +568,12 @@ async function loadPins() {
     data.forEach((row) => {
       allPins.push({ lat: row.lat, lng: row.lng });
       const marker = L.marker([row.lat, row.lng], {
-        icon: L.divIcon({ html: `${row.count}`, className: '', iconSize: [30, 30], iconAnchor: [15, 15] }),
+        icon: L.divIcon({
+          html: `<div style="background:#2563eb;color:white;border-radius:50%;width:30px;height:30px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:12px;">${row.count}</div>`,
+          className: '',
+          iconSize: [30, 30],
+          iconAnchor: [15, 15]
+        }),
         opacity: 0.7
       });
       marker.bindPopup(`<div style="color:#111;text-align:center;"><strong>${row.count}</strong> cameras in this grid square<br/><span style="font-size:11px;color:#666;">~1km²</span></div>`);
@@ -572,9 +603,9 @@ function toggleHeatmap() {
 }
 heatmapToggle.addEventListener('click', toggleHeatmap);
 
-// --- ADMIN PANEL ---
+// --- ADMIN PANEL (restricted to UID) ---
 async function loadAdminPanel() {
-  if (!currentUser) return;
+  if (!currentUser || currentUser.uid !== ADMIN_UID) { alert('Admin access denied.'); return; }
   const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
   if (error) { console.error(error); return; }
   const total = data.length;
@@ -647,4 +678,4 @@ async function loadAdminPanel() {
 refreshAdminBtn.addEventListener('click', loadAdminPanel);
 
 status.textContent = '🔵 App ready. Sign in with Firebase.';
-console.log('✅ Firebase Auth + chill map + no zoom controls.');
+console.log('✅ Updated: Google sign-in, admin UID, fixed icons.');
