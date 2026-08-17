@@ -386,7 +386,7 @@ cancelCropBtn.addEventListener('click', () => {
 });
 
 // ============================================================
-// 6. UPLOAD to Supabase
+// 6. UPLOAD to Supabase (using 'intel' table & bucket)
 // ============================================================
 async function uploadPhoto(blob) {
   status.textContent = '📍 Getting GPS...';
@@ -395,15 +395,15 @@ async function uploadPhoto(blob) {
   try {
     const filename = `cam_${Date.now()}.jpg`;
     const { error: uploadError } = await supabase.storage
-      .from('cameras')
+      .from('intel')
       .upload(filename, blob, { contentType: 'image/jpeg', cacheControl: '3600' });
     if (uploadError) throw uploadError;
 
-    const { data: urlData } = supabase.storage.from('cameras').getPublicUrl(filename);
+    const { data: urlData } = supabase.storage.from('intel').getPublicUrl(filename);
     const publicUrl = urlData.publicUrl;
 
     const { error: insertError } = await supabase
-      .from('cameras')
+      .from('intel')
       .insert([{
         lat: pos.lat,
         lng: pos.lng,
@@ -457,7 +457,7 @@ function switchView(view) {
 }
 
 // ============================================================
-// 9. ADMIN MAP
+// 9. ADMIN MAP (using 'intel' table)
 // ============================================================
 function initMap() {
   map = L.map(mapContainer).setView([18.4861, -69.9312], 13);
@@ -468,7 +468,7 @@ function initMap() {
 
 async function loadPins() {
   if (!map) return;
-  const { data, error } = await supabase.from('cameras').select('*').order('timestamp', { ascending: false });
+  const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
   if (error) { console.error(error); return; }
   markerLayer.clearLayers();
   allPins = [];
