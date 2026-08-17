@@ -3,7 +3,7 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 
 #header {
   padding: 12px 20px;
-  background: rgba(20, 20, 30, 0.8);
+  background: rgba(20, 20, 30, 0.85);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid rgba(255,255,255,0.06);
@@ -12,7 +12,26 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
   flex-shrink: 0;
   z-index: 10;
   gap: 12px;
+  position: relative;
+  overflow: hidden;
 }
+/* Scan line animation */
+#header::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, #2563eb, #60a5fa, #2563eb, transparent);
+  animation: scanline 4s linear infinite;
+  opacity: 0.6;
+}
+@keyframes scanline {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
+}
+
 #header h1 { font-size: 18px; font-weight: 600; flex: 1; letter-spacing: -0.3px; }
 #header h1 span { background: linear-gradient(135deg, #60a5fa, #2563eb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .back-btn {
@@ -28,29 +47,59 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 }
 .back-btn:hover { background: rgba(255,255,255,0.12); }
 
+#authSection { display: flex; gap: 8px; align-items: center; }
+.auth-btn, .about-btn {
+  background: rgba(255,255,255,0.06);
+  border: 1px solid rgba(255,255,255,0.1);
+  color: #ccc;
+  padding: 4px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: 0.2s;
+}
+.auth-btn:hover, .about-btn:hover { background: rgba(255,255,255,0.12); }
+.auth-btn.logged-in { border-color: #2563eb; color: #60a5fa; }
+
 #viewContainer { flex: 1; position: relative; overflow: hidden; background: #0a0a0a; }
 
-#homeView { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 20px; padding: 20px; background: radial-gradient(circle at 20% 30%, #111, #0a0a0a); }
+/* HOME */
+#homeView { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 16px; padding: 20px; background: radial-gradient(circle at 20% 30%, #111, #0a0a0a); position: relative; }
 #homeView.active { display: flex; }
-#homeView h2 { font-size: 24px; font-weight: 400; color: #aaa; }
-#homeView .sub { font-size: 14px; color: #666; margin-top: -8px; }
+#homeView .scan-line {
+  position: absolute;
+  top: 0; left: 0; width: 100%; height: 100%;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(37,99,235,0.03) 2px, rgba(37,99,235,0.03) 4px);
+  pointer-events: none;
+}
+#homeView h2 { font-size: 24px; font-weight: 400; color: #aaa; z-index: 1; }
+#homeView .sub { font-size: 14px; color: #666; margin-top: -8px; z-index: 1; }
 .home-btn {
-  width: 80%; max-width: 300px; padding: 18px;
+  width: 80%; max-width: 300px; padding: 16px;
   border: none; border-radius: 16px;
   font-size: 18px; font-weight: 600; cursor: pointer;
   transition: transform 0.15s, box-shadow 0.2s;
   background: rgba(255,255,255,0.04);
   border: 1px solid rgba(255,255,255,0.06);
   color: white;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  z-index: 1;
 }
 .home-btn:active { transform: scale(0.96); }
+.home-btn i { font-size: 20px; }
 .home-btn.camera { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; box-shadow: 0 8px 24px rgba(37,99,235,0.25); }
 .home-btn.camera:hover { box-shadow: 0 8px 32px rgba(37,99,235,0.4); }
 .home-btn.map { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); }
 .home-btn.map:hover { background: rgba(255,255,255,0.08); }
 .home-btn.route { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.2); }
 .home-btn.route:hover { background: rgba(16,185,129,0.25); }
+.home-btn.admin { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.2); }
+.home-btn.admin:hover { background: rgba(139,92,246,0.25); }
 
+/* CAPTURE, PREVIEW, CROP (same as before, but with icon updates) */
 #captureView { display: none; flex-direction: column; height: 100%; width: 100%; position: relative; background: #000; }
 #captureView.active { display: flex; }
 #captureView video { width: 100%; height: 100%; object-fit: cover; }
@@ -85,7 +134,7 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 #previewView .preview-img { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
 #previewView .preview-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
 #previewControls { display: flex; gap: 12px; padding: 16px; background: rgba(20,20,30,0.8); backdrop-filter: blur(8px); justify-content: center; }
-#previewControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; }
+#previewControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; display:flex;align-items:center;gap:8px; }
 #previewControls .retake { background: rgba(255,255,255,0.08); color: white; }
 #previewControls .retake:hover { background: rgba(255,255,255,0.15); }
 #previewControls .crop { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; }
@@ -96,13 +145,14 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 #cropView .crop-container { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; background: #000; }
 #cropView .crop-container canvas { max-width: 100%; max-height: 100%; touch-action: none; cursor: crosshair; }
 #cropControls { display: flex; gap: 12px; padding: 16px; background: rgba(20,20,30,0.8); backdrop-filter: blur(8px); justify-content: center; }
-#cropControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; }
+#cropControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; display:flex;align-items:center;gap:8px; }
 #cropControls .cancel-crop { background: rgba(255,255,255,0.08); color: white; }
 #cropControls .cancel-crop:hover { background: rgba(255,255,255,0.15); }
 #cropControls .confirm-crop { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; }
 #cropControls .confirm-crop:hover { box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
 #cropStatus { color: #aaa; font-size: 14px; text-align: center; padding: 8px; background: #111; }
 
+/* MAP */
 #mapView { display: none; height: 100%; width: 100%; position: relative; }
 #mapView.active { display: block; }
 #map { height: 100%; width: 100%; }
@@ -112,14 +162,18 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
   border: 1px solid rgba(255,255,255,0.08); color: white;
   padding: 10px 20px; border-radius: 30px; cursor: pointer;
   font-size: 14px; z-index: 1000; transition: 0.2s;
+  display:flex;align-items:center;gap:6px;
 }
 #heatmapToggle { left: 50%; transform: translateX(-50%); }
 #exportBtn { right: 16px; bottom: 24px; }
 #heatmapToggle.active { background: #2563eb; border-color: #2563eb; }
+#mapStatus { display:none; }
+#mapView.public #mapStatus { display:block; }
 
+/* ROUTE */
 #routeView { display: none; flex-direction: column; height: 100%; padding: 16px; background: #0a0a0a; gap: 12px; }
 #routeView.active { display: flex; }
-#routeView h3 { color: #ccc; font-weight: 400; font-size: 18px; }
+#routeView h3 { color: #ccc; font-weight: 400; font-size: 18px; display:flex;align-items:center;gap:8px; }
 .route-input-group { display: flex; flex-direction: column; gap: 8px; }
 .route-input-group input {
   padding: 12px; border-radius: 12px; border: 1px solid #333;
@@ -128,14 +182,14 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 .route-input-group input:focus { outline: 2px solid #2563eb; border-color: transparent; }
 .loc-btn {
   background: #2a2a2a; border: 1px solid #444; color: white;
-  border-radius: 12px; padding: 6px 12px; font-size: 18px; cursor: pointer;
-  white-space: nowrap; height: 48px; width: 48px; display: flex; align-items: center; justify-content: center;
+  border-radius: 12px; padding: 6px; font-size: 18px; cursor: pointer;
+  height: 48px; width: 48px; display: flex; align-items: center; justify-content: center;
 }
 .loc-btn:hover { background: #3a3a3a; }
 #calcRouteBtn, #refreshRouteBtn {
   padding: 14px; background: linear-gradient(135deg, #2563eb, #1d4ed8);
   border: none; color: white; font-weight: 600; border-radius: 30px;
-  font-size: 16px; cursor: pointer; flex: 1;
+  font-size: 16px; cursor: pointer; flex: 1; display:flex;align-items:center;justify-content:center;gap:8px;
 }
 #refreshRouteBtn { background: #2a2a2a; border: 1px solid #444; flex: 0.5; }
 #routeResult {
@@ -146,14 +200,38 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 .route-result-score { font-size: 32px; font-weight: 700; background: linear-gradient(135deg, #60a5fa, #2563eb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
 .route-result-small { font-size: 13px; color: #888; }
 
-.custom-popup img { max-width: 200px; border-radius: 6px; margin-top: 4px; border: 1px solid #ddd; }
-.custom-popup { color: #111; font-size: 13px; }
+/* ADMIN */
+#adminView { display: none; flex-direction: column; height: 100%; padding: 16px; background: #0a0a0a; gap: 8px; }
+#adminView.active { display: flex; }
+#adminView h3 { color: #ccc; font-weight: 400; font-size: 18px; display:flex;align-items:center;gap:8px; }
+.stat-card { background:#1a1a1a; border-radius:12px; padding:12px 16px; flex:1; min-width:80px; border:1px solid #2a2a2a; display:flex; flex-direction:column; align-items:center; }
+.stat-card span { color:#888; font-size:12px; }
+.stat-card strong { font-size:22px; color:white; margin-top:4px; }
+#adminTable { width:100%; border-collapse:collapse; font-size:13px; }
+#adminTable th { background:#1a1a1a; padding:10px; text-align:left; position:sticky; top:0; z-index:2; border-bottom:2px solid #2a2a2a; color:#888; font-weight:500; }
+#adminTable td { padding:10px; border-bottom:1px solid #1a1a1a; vertical-align:middle; }
+#adminTable tr:hover { background:#1a1a1a; }
+#adminTable input[type="checkbox"] { accent-color:#2563eb; width:16px; height:16px; }
+#adminTable .delete-btn { background:#dc2626; border:none; color:white; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; }
 
+/* MODAL */
+.modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:9999; align-items:center; justify-content:center; }
+.modal.active { display:flex; }
+.modal-content { background:#1a1a1a; border-radius:20px; padding:32px; max-width:500px; width:90%; border:1px solid #2a2a2a; position:relative; max-height:80vh; overflow-y:auto; }
+.modal-close { position:absolute; top:12px; right:18px; font-size:28px; color:#888; cursor:pointer; }
+.modal-close:hover { color:white; }
+.modal-content h2 { margin-bottom:16px; }
+.modal-content p { color:#aaa; line-height:1.6; margin-bottom:12px; }
+
+/* status bar */
 .status-bar { color: #888; font-size: 13px; padding: 8px 16px; background: #0a0a0a; border-top: 1px solid #1a1a1a; text-align: center; flex-shrink: 0; }
 
-.marker-cluster-custom {
-  background: #2563eb; border-radius: 50%; width: 40px; height: 40px;
-  display: flex; align-items: center; justify-content: center;
-  color: white; font-weight: bold; font-size: 16px;
-  box-shadow: 0 0 0 3px #0a0a0a;
-}
+/* Leaflet overrides */
+.custom-popup img { max-width: 200px; border-radius: 6px; margin-top: 4px; border: 1px solid #ddd; }
+.custom-popup { color: #111; font-size: 13px; }
+.marker-cluster-custom { background: #2563eb; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 0 0 3px #0a0a0a; }
+
+/* scrollbar */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: #0a0a0a; }
+::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 10px; }

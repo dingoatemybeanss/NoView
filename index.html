@@ -14,6 +14,12 @@
   <script src="https://unpkg.com/leaflet-heat@0.2.0/dist/leaflet-heat.js"></script>
   <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
 
+  <!-- Chart.js for stats -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <!-- Phosphor Icons -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@phosphor-icons/web@2.1.1/src/regular/style.css" />
+
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -21,17 +27,23 @@
 <div id="header">
   <button class="back-btn" id="backBtn">← Back</button>
   <h1>📷 <span>Surveillance</span> Census</h1>
+  <div id="authSection">
+    <button id="authBtn" class="auth-btn">Sign In</button>
+    <button id="aboutBtn" class="about-btn" title="About this project">ⓘ</button>
+  </div>
 </div>
 
 <div id="viewContainer">
 
   <!-- HOME -->
   <div id="homeView" class="active">
-    <h2>What do you want to do?</h2>
-    <div class="sub">Map the surveillance state.</div>
-    <button class="home-btn camera" id="goCameraBtn">📸 Take Photos</button>
-    <button class="home-btn map" id="goMapBtn">🗺️ View Map</button>
-    <button class="home-btn route" id="goRouteBtn">🛣️ Route Exposure Score</button>
+    <div class="scan-line"></div>
+    <h2>Map the surveillance state.</h2>
+    <div class="sub">Anonymous? Not in this city.</div>
+    <button class="home-btn camera" id="goCameraBtn"><i class="ph-camera"></i> Take Photos</button>
+    <button class="home-btn map" id="goMapBtn"><i class="ph-map-trifold"></i> View Map</button>
+    <button class="home-btn route" id="goRouteBtn"><i class="ph-arrows-left-right"></i> Route Exposure</button>
+    <button class="home-btn admin" id="goAdminBtn" style="display:none;"><i class="ph-grid-four"></i> Admin Panel</button>
   </div>
 
   <!-- CAPTURE -->
@@ -46,18 +58,29 @@
   <div id="previewView">
     <div class="preview-img"><img id="previewImg" /></div>
     <div id="previewControls">
-      <button class="retake" id="retakeBtn">✖️ Retake</button>
-      <button class="crop" id="cropBtn">✂️ Crop</button>
+      <button class="retake" id="retakeBtn"><i class="ph-arrow-counter-clockwise"></i> Retake</button>
+      <button class="crop" id="cropBtn"><i class="ph-crop"></i> Crop</button>
     </div>
   </div>
 
-  <!-- CROP -->
+  <!-- CROP + UPLOAD (with camera type dropdown) -->
   <div id="cropView">
     <div class="crop-container"><canvas id="cropCanvas"></canvas></div>
     <div id="cropStatus">✂️ Drag to select the camera</div>
+    <div style="display:flex;gap:8px;padding:8px 16px;background:#1a1a1a;align-items:center;flex-wrap:wrap;">
+      <label style="color:#aaa;font-size:14px;">Camera type:</label>
+      <select id="cameraTypeSelect" style="flex:1;padding:10px;border-radius:8px;background:#2a2a2a;color:white;border:1px solid #444;">
+        <option value="unknown">❓ Unknown</option>
+        <option value="dome">🟠 Dome</option>
+        <option value="bullet">🔫 Bullet</option>
+        <option value="doorbell">🚪 Doorbell</option>
+        <option value="alpr">🚗 ALPR</option>
+        <option value="traffic">🚦 Traffic</option>
+      </select>
+    </div>
     <div id="cropControls">
-      <button class="cancel-crop" id="cancelCropBtn">✖️ Cancel</button>
-      <button class="confirm-crop" id="confirmCropBtn">✅ Crop & Upload</button>
+      <button class="cancel-crop" id="cancelCropBtn"><i class="ph-x"></i> Cancel</button>
+      <button class="confirm-crop" id="confirmCropBtn"><i class="ph-check"></i> Crop & Upload</button>
     </div>
   </div>
 
@@ -66,31 +89,70 @@
     <div id="map"></div>
     <button id="heatmapToggle">🔥 Heatmap</button>
     <button id="exportBtn">📥 Export GeoJSON</button>
+    <div id="mapStatus" style="position:absolute;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.7);padding:6px 16px;border-radius:20px;font-size:12px;color:#888;z-index:1000;pointer-events:none;">🔒 Public view: aggregated only</div>
   </div>
 
   <!-- ROUTE -->
   <div id="routeView">
-    <h3>🛣️ Surveillance Exposure Score</h3>
+    <h3><i class="ph-arrows-left-right"></i> Surveillance Exposure Score</h3>
     <div class="route-input-group">
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="text" id="routeStart" placeholder="Start (address or lat,lng)" style="flex:1;" />
-        <button id="startLocBtn" class="loc-btn" title="Use current location">📍</button>
+        <button id="startLocBtn" class="loc-btn" title="Use current location"><i class="ph-crosshair"></i></button>
       </div>
       <div style="display:flex;gap:8px;align-items:center;">
         <input type="text" id="routeEnd" placeholder="End (address or lat,lng)" style="flex:1;" />
-        <button id="endLocBtn" class="loc-btn" title="Use current location">📍</button>
+        <button id="endLocBtn" class="loc-btn" title="Use current location"><i class="ph-crosshair"></i></button>
       </div>
     </div>
     <div style="display:flex;gap:8px;">
-      <button id="calcRouteBtn">Calculate Exposure</button>
-      <button id="refreshRouteBtn" style="background:#2a2a2a;border:1px solid #444;">⟳ Refresh Data</button>
+      <button id="calcRouteBtn"><i class="ph-calculator"></i> Calculate</button>
+      <button id="refreshRouteBtn" style="background:#2a2a2a;border:1px solid #444;"><i class="ph-arrows-clockwise"></i> Refresh</button>
     </div>
     <div id="routeResult">Enter a route and hit calculate.</div>
+  </div>
+
+  <!-- ADMIN PANEL -->
+  <div id="adminView">
+    <h3><i class="ph-grid-four"></i> Admin Panel</h3>
+    <div style="display:flex;gap:16px;flex-wrap:wrap;margin-bottom:16px;">
+      <div class="stat-card"><span>📊 Total</span><strong id="statTotal">0</strong></div>
+      <div class="stat-card"><span>📷 Domes</span><strong id="statDome">0</strong></div>
+      <div class="stat-card"><span>🔫 Bullets</span><strong id="statBullet">0</strong></div>
+      <div class="stat-card"><span>🚗 ALPR</span><strong id="statAlpr">0</strong></div>
+    </div>
+    <div style="background:#1a1a1a;border-radius:12px;padding:12px;margin-bottom:12px;max-height:300px;overflow-y:auto;">
+      <canvas id="statsChart" height="100"></canvas>
+    </div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;">
+      <button id="bulkDeleteBtn" style="background:#dc2626;border:none;color:white;padding:8px 16px;border-radius:8px;cursor:pointer;">🗑️ Delete Selected</button>
+      <button id="refreshAdminBtn" style="background:#2a2a2a;border:1px solid #444;color:white;padding:8px 16px;border-radius:8px;cursor:pointer;"><i class="ph-arrows-clockwise"></i> Refresh</button>
+    </div>
+    <div style="overflow-x:auto;flex:1;border-radius:12px;border:1px solid #2a2a2a;">
+      <table id="adminTable">
+        <thead><tr><th><input type="checkbox" id="selectAll" /></th><th>ID</th><th>Lat</th><th>Lng</th><th>Type</th><th>Timestamp</th><th>Action</th></tr></thead>
+        <tbody id="adminTableBody"></tbody>
+      </table>
+    </div>
   </div>
 
 </div>
 
 <div class="status-bar" id="status">🔵 Ready</div>
+
+<!-- ABOUT MODAL -->
+<div id="aboutModal" class="modal">
+  <div class="modal-content">
+    <span class="modal-close" id="modalClose">&times;</span>
+    <h2>About Surveillance Census</h2>
+    <p><strong>This is not just a map.</strong> It's a research instrument to prove a thesis: <em>anonymity in modern cities is a myth.</em></p>
+    <p>Every pin represents a real surveillance camera I photographed, cropped, and geolocated while biking through Santo Domingo.</p>
+    <p><strong>Why it matters:</strong> If Spider-Man can't stay anonymous in a city like this, neither can you.</p>
+    <p><strong>Data governance:</strong> Raw pins are private. Only aggregated density grids are shown to the public. This tool is designed to critique surveillance, not enable avoidance of it.</p>
+    <p>— Built for my college application, connecting technical fieldwork to my essay on mass surveillance.</p>
+    <button id="modalCloseBtn" class="home-btn camera" style="width:auto;padding:10px 24px;margin-top:12px;">Close</button>
+  </div>
+</div>
 
 <script type="importmap">
   {

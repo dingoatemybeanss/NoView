@@ -12,10 +12,17 @@ const previewView = document.getElementById('previewView');
 const cropView = document.getElementById('cropView');
 const mapView = document.getElementById('mapView');
 const routeView = document.getElementById('routeView');
+const adminView = document.getElementById('adminView');
 const backBtn = document.getElementById('backBtn');
 const goCameraBtn = document.getElementById('goCameraBtn');
 const goMapBtn = document.getElementById('goMapBtn');
 const goRouteBtn = document.getElementById('goRouteBtn');
+const goAdminBtn = document.getElementById('goAdminBtn');
+const authBtn = document.getElementById('authBtn');
+const aboutBtn = document.getElementById('aboutBtn');
+const modal = document.getElementById('aboutModal');
+const modalClose = document.getElementById('modalClose');
+const modalCloseBtn = document.getElementById('modalCloseBtn');
 
 const video = document.getElementById('videoPreview');
 const canvas = document.getElementById('cropCanvas');
@@ -29,10 +36,12 @@ const cropBtn = document.getElementById('cropBtn');
 const cancelCropBtn = document.getElementById('cancelCropBtn');
 const confirmCropBtn = document.getElementById('confirmCropBtn');
 const cropStatus = document.getElementById('cropStatus');
+const cameraTypeSelect = document.getElementById('cameraTypeSelect');
 const status = document.getElementById('status');
 const mapContainer = document.getElementById('map');
 const heatmapToggle = document.getElementById('heatmapToggle');
 const exportBtn = document.getElementById('exportBtn');
+const mapStatus = document.getElementById('mapStatus');
 
 const routeStart = document.getElementById('routeStart');
 const routeEnd = document.getElementById('routeEnd');
@@ -41,6 +50,17 @@ const refreshRouteBtn = document.getElementById('refreshRouteBtn');
 const routeResult = document.getElementById('routeResult');
 const startLocBtn = document.getElementById('startLocBtn');
 const endLocBtn = document.getElementById('endLocBtn');
+
+// Admin refs
+const adminTableBody = document.getElementById('adminTableBody');
+const refreshAdminBtn = document.getElementById('refreshAdminBtn');
+const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
+const selectAll = document.getElementById('selectAll');
+const statTotal = document.getElementById('statTotal');
+const statDome = document.getElementById('statDome');
+const statBullet = document.getElementById('statBullet');
+const statAlpr = document.getElementById('statAlpr');
+const statsChartCanvas = document.getElementById('statsChart');
 
 let stream = null;
 let capturedImageData = null;
@@ -52,16 +72,67 @@ let isHeatmapOn = false;
 let allPins = [];
 let cropStart = null, cropEnd = null, isCropping = false;
 let cropRAF = null;
+let currentUser = null;
+let statsChart = null;
+
+// --- AUTH ---
+async function checkAuth() {
+  const { data: { session } } = await supabase.auth.getSession();
+  currentUser = session?.user ?? null;
+  updateAuthUI();
+  if (currentUser) goAdminBtn.style.display = 'inline-flex';
+  else goAdminBtn.style.display = 'none';
+  return currentUser;
+}
+
+function updateAuthUI() {
+  if (currentUser) {
+    authBtn.textContent = `👤 ${currentUser.email?.split('@')[0] || 'User'}`;
+    authBtn.classList.add('logged-in');
+    mapStatus.textContent = '🔒 Full precision (logged in)';
+    mapView.classList.remove('public');
+  } else {
+    authBtn.textContent = 'Sign In';
+    authBtn.classList.remove('logged-in');
+    mapStatus.textContent = '🔒 Public view: aggregated only';
+    mapView.classList.add('public');
+  }
+}
+
+authBtn.addEventListener('click', async () => {
+  if (currentUser) {
+    await supabase.auth.signOut();
+    currentUser = null;
+    updateAuthUI();
+    goAdminBtn.style.display = 'none';
+    if (map) { loadPins(); } // reload public view
+    status.textContent = '🔵 Signed out';
+  } else {
+    // Simple magic link sign-in
+    const email = prompt('Enter your email to sign in (magic link):');
+    if (email) {
+      const { error } = await supabase.auth.signInWithOtp({ email });
+      if (error) { alert('Error: ' + error.message); return; }
+      alert('Check your email for the magic link!');
+    }
+  }
+});
+
+// --- MODAL ---
+aboutBtn.addEventListener('click', () => modal.classList.add('active'));
+modalClose.addEventListener('click', () => modal.classList.remove('active'));
+modalCloseBtn.addEventListener('click', () => modal.classList.remove('active'));
+modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.remove('active'); });
 
 // --- NAVIGATION ---
 function showView(viewId) {
-  [homeView, captureView, previewView, cropView, mapView, routeView].forEach(v => v.classList.remove('active'));
+  [homeView, captureView, previewView, cropView, mapView, routeView, adminView].forEach(v => v.classList.remove('active'));
   document.getElementById(viewId).classList.add('active');
   if (viewId === 'homeView') backBtn.style.display = 'none';
   else backBtn.style.display = 'inline-block';
-  if (viewId === 'routeView' && allPins.length === 0) {
-    routeResult.innerHTML = '⚠️ No cameras in database. Upload some photos first!';
-  }
+  if (viewId === 'adminView' && currentUser) loadAdminPanel();
+  if (viewId === 'mapView' && !map) initMap();
+  else if (viewId === 'mapView' && map) map.invalidateSize();
 }
 
 goCameraBtn.addEventListener('click', () => {
@@ -69,14 +140,9 @@ goCameraBtn.addEventListener('click', () => {
   if (!stream) startCamera();
   else { video.srcObject = stream; video.play(); captureStatus.textContent = '📷 Ready'; }
 });
-goMapBtn.addEventListener('click', () => {
-  showView('mapView');
-  if (!map) initMap();
-  else map.invalidateSize();
-});
-goRouteBtn.addEventListener('click', () => {
-  showView('routeView');
-});
+goMapBtn.addEventListener('click', () => showView('mapView'));
+goRouteBtn.addEventListener('click', () => showView('routeView'));
+goAdminBtn.addEventListener('click', () => showView('adminView'));
 
 backBtn.addEventListener('click', () => {
   if (captureView.classList.contains('active') && stream) {
@@ -139,7 +205,7 @@ cropBtn.addEventListener('click', () => {
   img.src = previewImg.src;
 });
 
-// --- CROP (optimized with requestAnimationFrame) ---
+// --- CROP (optimized) ---
 function getCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -170,74 +236,26 @@ function drawCropOverlay() {
 
 function requestCropUpdate() {
   if (cropRAF) cancelAnimationFrame(cropRAF);
-  cropRAF = requestAnimationFrame(() => {
-    drawCropOverlay();
-    cropRAF = null;
-  });
+  cropRAF = requestAnimationFrame(() => { drawCropOverlay(); cropRAF = null; });
 }
 
-canvas.addEventListener('mousedown', (e) => {
-  isCropping = true;
-  const p = getCanvasCoords(e);
-  cropStart = { x: p.x, y: p.y };
-  cropEnd = { x: p.x, y: p.y };
-  requestCropUpdate();
-});
-window.addEventListener('mousemove', (e) => {
-  if (!isCropping) return;
-  const p = getCanvasCoords(e);
-  cropEnd = { x: p.x, y: p.y };
-  requestCropUpdate();
-});
-window.addEventListener('mouseup', () => {
-  if (isCropping) {
-    isCropping = false;
-    if (cropStart && cropEnd) {
-      const w = Math.abs(cropEnd.x - cropStart.x);
-      const h = Math.abs(cropEnd.y - cropStart.y);
-      if (w < 10 || h < 10) {
-        cropStatus.textContent = '⚠️ Selection too small, try again';
-        cropStart = null; cropEnd = null;
-        drawCropOverlay();
-      } else {
-        cropStatus.textContent = '✅ Ready. Tap "Crop & Upload"';
-      }
-    }
-  }
-});
-canvas.addEventListener('touchstart', (e) => {
-  e.preventDefault();
-  isCropping = true;
-  const p = getCanvasCoords(e);
-  cropStart = { x: p.x, y: p.y };
-  cropEnd = { x: p.x, y: p.y };
-  requestCropUpdate();
-}, { passive: false });
-window.addEventListener('touchmove', (e) => {
-  if (!isCropping) return;
-  e.preventDefault();
-  const p = getCanvasCoords(e);
-  cropEnd = { x: p.x, y: p.y };
-  requestCropUpdate();
-}, { passive: false });
-window.addEventListener('touchend', (e) => {
-  if (isCropping) {
-    isCropping = false;
-    if (cropStart && cropEnd) {
-      const w = Math.abs(cropEnd.x - cropStart.x);
-      const h = Math.abs(cropEnd.y - cropStart.y);
-      if (w < 10 || h < 10) {
-        cropStatus.textContent = '⚠️ Selection too small, try again';
-        cropStart = null; cropEnd = null;
-        drawCropOverlay();
-      } else {
-        cropStatus.textContent = '✅ Ready. Tap "Crop & Upload"';
-      }
-    }
-  }
-}, { passive: false });
+canvas.addEventListener('mousedown', (e) => { isCropping = true; const p = getCanvasCoords(e); cropStart = { x: p.x, y: p.y }; cropEnd = { x: p.x, y: p.y }; requestCropUpdate(); });
+window.addEventListener('mousemove', (e) => { if (!isCropping) return; const p = getCanvasCoords(e); cropEnd = { x: p.x, y: p.y }; requestCropUpdate(); });
+window.addEventListener('mouseup', () => { if (isCropping) { isCropping = false; validateCrop(); } });
+canvas.addEventListener('touchstart', (e) => { e.preventDefault(); isCropping = true; const p = getCanvasCoords(e); cropStart = { x: p.x, y: p.y }; cropEnd = { x: p.x, y: p.y }; requestCropUpdate(); }, { passive: false });
+window.addEventListener('touchmove', (e) => { if (!isCropping) return; e.preventDefault(); const p = getCanvasCoords(e); cropEnd = { x: p.x, y: p.y }; requestCropUpdate(); }, { passive: false });
+window.addEventListener('touchend', (e) => { if (isCropping) { isCropping = false; validateCrop(); } }, { passive: false });
 
-// --- CONFIRM CROP & UPLOAD ---
+function validateCrop() {
+  if (cropStart && cropEnd) {
+    const w = Math.abs(cropEnd.x - cropStart.x);
+    const h = Math.abs(cropEnd.y - cropStart.y);
+    if (w < 10 || h < 10) { cropStatus.textContent = '⚠️ Selection too small, try again'; cropStart = null; cropEnd = null; drawCropOverlay(); }
+    else { cropStatus.textContent = '✅ Ready. Tap "Crop & Upload"'; }
+  }
+}
+
+// --- CONFIRM CROP & UPLOAD (with camera type) ---
 confirmCropBtn.addEventListener('click', async () => {
   if (!cropStart || !cropEnd) { cropStatus.textContent = '⚠️ Drag a rectangle first!'; return; }
   const sx = Math.min(cropStart.x, cropEnd.x);
@@ -253,98 +271,67 @@ confirmCropBtn.addEventListener('click', async () => {
   cctx.drawImage(canvas._img, sx, sy, sw, sh, 0, 0, sw, sh);
   cropCanvas.toBlob(async (blob) => {
     if (!blob) { cropStatus.textContent = '❌ Crop failed'; return; }
-    await uploadPhoto(blob);
+    const camType = cameraTypeSelect.value;
+    await uploadPhoto(blob, camType);
   }, 'image/jpeg', 0.92);
 });
 
 cancelCropBtn.addEventListener('click', () => { showView('previewView'); });
 
-// --- GPS with averaging ---
+// --- GPS ---
 function getAccuratePosition() {
   return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({ lat: 18.4861, lng: -69.9312 });
-      return;
-    }
+    if (!navigator.geolocation) { resolve({ lat: 18.4861, lng: -69.9312 }); return; }
     let readings = [];
     let watchId = navigator.geolocation.watchPosition(
       (pos) => {
         readings.push({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy });
         if (readings.length >= 5) {
           navigator.geolocation.clearWatch(watchId);
-          let totalWeight = 0;
-          let avgLat = 0, avgLng = 0;
-          readings.forEach(r => {
-            const w = 1 / (r.acc + 1);
-            avgLat += r.lat * w;
-            avgLng += r.lng * w;
-            totalWeight += w;
-          });
-          avgLat /= totalWeight;
-          avgLng /= totalWeight;
+          let totalWeight = 0; let avgLat = 0, avgLng = 0;
+          readings.forEach(r => { const w = 1 / (r.acc + 1); avgLat += r.lat * w; avgLng += r.lng * w; totalWeight += w; });
+          avgLat /= totalWeight; avgLng /= totalWeight;
           resolve({ lat: avgLat, lng: avgLng });
         }
       },
-      (err) => {
-        navigator.geolocation.clearWatch(watchId);
-        resolve({ lat: 18.4861, lng: -69.9312 });
-      },
+      () => { navigator.geolocation.clearWatch(watchId); resolve({ lat: 18.4861, lng: -69.9312 }); },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 2000 }
     );
-    setTimeout(() => {
-      if (readings.length < 3) {
-        navigator.geolocation.clearWatch(watchId);
-        resolve({ lat: 18.4861, lng: -69.9312 });
-      }
-    }, 12000);
+    setTimeout(() => { if (readings.length < 3) { navigator.geolocation.clearWatch(watchId); resolve({ lat: 18.4861, lng: -69.9312 }); } }, 12000);
   });
 }
 
-// --- UPLOAD with duplicate check ---
-async function uploadPhoto(blob) {
+// --- UPLOAD (with user_id and camera_type) ---
+async function uploadPhoto(blob, camType) {
+  if (!currentUser) { alert('Please sign in first!'); return; }
   status.textContent = '📍 Getting GPS...';
   const pos = await getAccuratePosition();
-
-  status.textContent = '🔍 Checking for duplicates...';
-  const { data: nearby, error: nearbyError } = await supabase
+  status.textContent = '🔍 Checking duplicates...';
+  const { data: nearby } = await supabase
     .from('intel')
     .select('id, lat, lng')
-    .filter('lat', 'gte', pos.lat - 0.00015)
-    .filter('lat', 'lte', pos.lat + 0.00015)
-    .filter('lng', 'gte', pos.lng - 0.00015)
-    .filter('lng', 'lte', pos.lng + 0.00015);
-  if (!nearbyError && nearby && nearby.length > 0) {
-    const close = nearby.filter(p => {
-      const d = turf.distance(turf.point([pos.lng, pos.lat]), turf.point([p.lng, p.lat]), { units: 'meters' });
-      return d < 15;
-    });
-    if (close.length > 0) {
-      const confirm = confirm(`⚠️ Found ${close.length} camera(s) within 15m. Still upload?`);
-      if (!confirm) {
-        status.textContent = '❌ Upload cancelled (duplicate)';
-        cropStatus.textContent = '❌ Cancelled – duplicate nearby';
-        return;
-      }
+    .filter('lat', 'gte', pos.lat - 0.00015).filter('lat', 'lte', pos.lat + 0.00015)
+    .filter('lng', 'gte', pos.lng - 0.00015).filter('lng', 'lte', pos.lng + 0.00015);
+  if (nearby && nearby.length > 0) {
+    const close = nearby.filter(p => turf.distance(turf.point([pos.lng, pos.lat]), turf.point([p.lng, p.lat]), { units: 'meters' }) < 15);
+    if (close.length > 0 && !confirm(`⚠️ ${close.length} camera(s) within 15m. Still upload?`)) {
+      status.textContent = '❌ Cancelled'; cropStatus.textContent = '❌ Cancelled'; return;
     }
   }
-
   status.textContent = '⬆️ Uploading...';
   try {
     const filename = `cam_${Date.now()}.jpg`;
-    const { error: uploadError } = await supabase.storage
-      .from('intel')
-      .upload(filename, blob, { contentType: 'image/jpeg', cacheControl: '3600' });
+    const { error: uploadError } = await supabase.storage.from('intel').upload(filename, blob, { contentType: 'image/jpeg', cacheControl: '3600' });
     if (uploadError) throw uploadError;
     const { data: urlData } = supabase.storage.from('intel').getPublicUrl(filename);
     const publicUrl = urlData.publicUrl;
     const { error: insertError } = await supabase
       .from('intel')
       .insert([{
-        lat: pos.lat,
-        lng: pos.lng,
-        image_url: publicUrl,
-        filename: filename,
-        timestamp: new Date().toISOString()
+        lat: pos.lat, lng: pos.lng, image_url: publicUrl, filename: filename,
+        timestamp: new Date().toISOString(),
+        camera_type: camType,
+        user_id: currentUser.id
       }]);
     if (insertError) throw insertError;
     status.textContent = `✅ Uploaded! (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`;
@@ -358,157 +345,112 @@ async function uploadPhoto(blob) {
   }
 }
 
-// --- GEOCODING (address -> lat,lng) using Nominatim ---
+// --- GEOCODING ---
 async function geocodeAddress(query) {
   if (!query || query.trim() === '') return null;
-  // Check if it's already lat,lng
   const parts = query.split(',').map(Number);
-  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) {
-    return { lat: parts[0], lng: parts[1] };
-  }
+  if (parts.length === 2 && !isNaN(parts[0]) && !isNaN(parts[1])) return { lat: parts[0], lng: parts[1] };
   try {
     const resp = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=1`);
     const data = await resp.json();
-    if (data && data.length > 0) {
-      return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
-    }
+    if (data && data.length > 0) return { lat: parseFloat(data[0].lat), lng: parseFloat(data[0].lon) };
     return null;
-  } catch (e) {
-    return null;
-  }
+  } catch (e) { return null; }
 }
 
 // --- ROUTE SCORER ---
 async function calculateRoute() {
-  routeResult.innerHTML = '⏳ Geocoding addresses...';
-  const startAddr = routeStart.value.trim();
-  const endAddr = routeEnd.value.trim();
-  if (!startAddr || !endAddr) {
-    routeResult.innerHTML = '❌ Please enter both start and end.';
-    return;
-  }
-
+  routeResult.innerHTML = '⏳ Geocoding...';
+  const startAddr = routeStart.value.trim(), endAddr = routeEnd.value.trim();
+  if (!startAddr || !endAddr) { routeResult.innerHTML = '❌ Enter both.'; return; }
   const startCoords = await geocodeAddress(startAddr);
   const endCoords = await geocodeAddress(endAddr);
-  if (!startCoords || !endCoords) {
-    routeResult.innerHTML = '❌ Could not find coordinates for one of the addresses. Try lat,lng.';
-    return;
-  }
-
+  if (!startCoords || !endCoords) { routeResult.innerHTML = '❌ Address not found.'; return; }
   routeResult.innerHTML = '⏳ Fetching route...';
   try {
     const url = `https://router.project-osrm.org/route/v1/driving/${startCoords.lng},${startCoords.lat};${endCoords.lng},${endCoords.lat}?overview=full&geometries=geojson`;
     const resp = await fetch(url);
     const data = await resp.json();
-    if (!data.routes || data.routes.length === 0) { routeResult.innerHTML = '❌ No route found.'; return; }
-    const routeGeo = data.routes[0].geometry;
-    const routeLine = turf.lineString(routeGeo.coordinates);
+    if (!data.routes || data.routes.length === 0) { routeResult.innerHTML = '❌ No route.'; return; }
+    const routeLine = turf.lineString(data.routes[0].geometry.coordinates);
     const buffered = turf.buffer(routeLine, 50, { units: 'meters' });
     let inside = 0;
-    allPins.forEach(p => {
-      const pt = turf.point([p.lng, p.lat]);
-      if (turf.booleanPointInPolygon(pt, buffered)) inside++;
-    });
+    allPins.forEach(p => { if (turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), buffered)) inside++; });
     const total = allPins.length;
     routeResult.innerHTML = `
       <div><strong>📍 Start:</strong> ${startAddr}</div>
       <div><strong>📍 End:</strong> ${endAddr}</div>
-      <div>Route length: <strong>${(data.routes[0].distance / 1000).toFixed(2)} km</strong></div>
+      <div>Route: <strong>${(data.routes[0].distance / 1000).toFixed(2)} km</strong></div>
       <div>Cameras within 50m: <span class="route-result-score">${inside}</span></div>
-      <div>Total cameras in DB: ${total}</div>
-      <div class="route-result-small">Exposure density: ${total > 0 ? (inside / total * 100).toFixed(1) : 0}% of all cameras</div>
+      <div>Total in DB: ${total}</div>
+      <div class="route-result-small">Density: ${total > 0 ? (inside / total * 100).toFixed(1) : 0}%</div>
     `;
-  } catch (err) {
-    routeResult.innerHTML = '❌ Error: ' + err.message;
-  }
+  } catch (err) { routeResult.innerHTML = '❌ Error: ' + err.message; }
 }
-
 calcRouteBtn.addEventListener('click', calculateRoute);
-refreshRouteBtn.addEventListener('click', () => {
-  if (routeView.classList.contains('active')) {
-    loadPinsSilent();
-    routeResult.innerHTML = '⟳ Data refreshed. ' + allPins.length + ' cameras loaded.';
-  }
-});
+refreshRouteBtn.addEventListener('click', () => { if (routeView.classList.contains('active')) { loadPinsSilent(); routeResult.innerHTML = '⟳ Refreshed. ' + allPins.length + ' cameras.'; } });
 
 async function loadPinsSilent() {
   const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
-  if (error) { console.error(error); return; }
-  allPins = [];
-  data.forEach((row) => {
-    if (!row.lat || !row.lng) return;
-    allPins.push({ lat: row.lat, lng: row.lng, imageUrl: row.image_url, timestamp: row.timestamp });
-  });
+  if (!error) { allPins = data.filter(r => r.lat && r.lng).map(r => ({ lat: r.lat, lng: r.lng, imageUrl: r.image_url, timestamp: r.timestamp })); }
 }
 
-// --- Current Location buttons for route ---
+// --- LOCATION BUTTONS ---
 function setLocationToInput(input) {
-  if (!navigator.geolocation) {
-    alert('Geolocation not supported.');
-    return;
-  }
+  if (!navigator.geolocation) { alert('No GPS.'); return; }
   navigator.geolocation.getCurrentPosition(
-    (pos) => {
-      input.value = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`;
-    },
-    () => { alert('Could not get location.'); },
+    (pos) => { input.value = `${pos.coords.latitude.toFixed(6)},${pos.coords.longitude.toFixed(6)}`; },
+    () => alert('Could not get location.'),
     { enableHighAccuracy: true }
   );
 }
 startLocBtn.addEventListener('click', () => setLocationToInput(routeStart));
 endLocBtn.addEventListener('click', () => setLocationToInput(routeEnd));
 
-// --- MAP with custom dark tile layer ---
+// --- MAP ---
 function initMap() {
-  const defaultLat = 18.4861;
-  const defaultLng = -69.9312;
-  map = L.map(mapContainer).setView([defaultLat, defaultLng], 14);
-  
-  // Custom dark map (looks like a surveillance control room)
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>, &copy; CartoDB'
-  }).addTo(map);
-
-  const clusterIcon = function(cluster) {
-    const count = cluster.getChildCount();
-    return L.divIcon({
-      html: `<div style="background:#2563eb;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 0 0 3px #0a0a0a;">${count}</div>`,
-      className: '',
-      iconSize: [40, 40]
-    });
-  };
-
-  markerCluster = L.markerClusterGroup({
-    iconCreateFunction: clusterIcon,
-    spiderfyOnMaxZoom: true,
-    showCoverageOnHover: false,
-    maxClusterRadius: 50,
-    spiderfyDistanceMultiplier: 1.5
+  map = L.map(mapContainer).setView([18.4861, -69.9312], 14);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OSM, CartoDB' }).addTo(map);
+  const clusterIcon = (cluster) => L.divIcon({
+    html: `<div style="background:#2563eb;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 0 0 3px #0a0a0a;">${cluster.getChildCount()}</div>`,
+    className: '', iconSize: [40, 40]
   });
+  markerCluster = L.markerClusterGroup({ iconCreateFunction: clusterIcon, spiderfyOnMaxZoom: true, maxClusterRadius: 50 });
   map.addLayer(markerCluster);
   loadPins();
 }
 
 async function loadPins() {
   if (!map) return;
-  const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
-  if (error) { console.error(error); return; }
   markerCluster.clearLayers();
   allPins = [];
-  data.forEach((row) => {
-    if (!row.lat || !row.lng) return;
-    allPins.push({ lat: row.lat, lng: row.lng, imageUrl: row.image_url, timestamp: row.timestamp });
-    const marker = L.marker([row.lat, row.lng], {
-      icon: L.divIcon({ html: '📷', className: '', iconSize: [24, 24], iconAnchor: [12, 12] })
+
+  if (currentUser) {
+    // Full precision
+    const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
+    if (error) { console.error(error); return; }
+    data.forEach((row) => {
+      if (!row.lat || !row.lng) return;
+      allPins.push({ lat: row.lat, lng: row.lng, imageUrl: row.image_url, timestamp: row.timestamp, camera_type: row.camera_type });
+      const marker = L.marker([row.lat, row.lng], { icon: L.divIcon({ html: '📷', className: '', iconSize: [24, 24], iconAnchor: [12, 12] }) });
+      marker.bindPopup(`<div class="custom-popup"><strong>${row.timestamp ? new Date(row.timestamp).toLocaleString() : 'N/A'}</strong><br/>${row.camera_type ? 'Type: ' + row.camera_type : ''}<br/><img src="${row.image_url}" alt="camera" /></div>`);
+      markerCluster.addLayer(marker);
     });
-    marker.bindPopup(`
-      <div class="custom-popup">
-        <strong>${row.timestamp ? new Date(row.timestamp).toLocaleString() : 'N/A'}</strong><br/>
-        <img src="${row.image_url}" alt="camera" />
-      </div>
-    `);
-    markerCluster.addLayer(marker);
-  });
+  } else {
+    // Public: aggregated grid squares (privacy safe)
+    const { data, error } = await supabase.rpc('get_public_heatmap');
+    if (error) { console.error(error); return; }
+    data.forEach((row) => {
+      allPins.push({ lat: row.lat, lng: row.lng }); // store for route scorer (approximate)
+      const marker = L.marker([row.lat, row.lng], {
+        icon: L.divIcon({ html: `${row.count}`, className: '', iconSize: [30, 30], iconAnchor: [15, 15] }),
+        opacity: 0.7
+      });
+      marker.bindPopup(`<div style="color:#111;text-align:center;"><strong>${row.count}</strong> cameras in this grid square<br/><span style="font-size:11px;color:#666;">~1km²</span></div>`);
+      markerCluster.addLayer(marker);
+    });
+  }
+
   if (allPins.length > 0) {
     const bounds = markerCluster.getBounds();
     if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
@@ -530,24 +472,88 @@ function toggleHeatmap() {
 }
 heatmapToggle.addEventListener('click', toggleHeatmap);
 
-// --- EXPORT GeoJSON ---
+// --- EXPORT (only for logged in) ---
 exportBtn.addEventListener('click', () => {
-  if (allPins.length === 0) { alert('No cameras to export.'); return; }
-  const features = allPins.map(p => ({
-    type: 'Feature',
-    geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
-    properties: { image_url: p.imageUrl, timestamp: p.timestamp }
-  }));
-  const geojson = { type: 'FeatureCollection', features };
-  const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
+  if (!currentUser) { alert('Sign in to export raw data.'); return; }
+  if (allPins.length === 0) { alert('No data.'); return; }
+  const features = allPins.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { image_url: p.imageUrl, timestamp: p.timestamp } }));
+  const blob = new Blob([JSON.stringify({ type: 'FeatureCollection', features }, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `surveillance_cameras_${new Date().toISOString().slice(0,10)}.geojson`;
-  a.click();
+  const a = document.createElement('a'); a.href = url; a.download = `cameras_${new Date().toISOString().slice(0,10)}.geojson`; a.click();
   URL.revokeObjectURL(url);
 });
 
+// --- ADMIN PANEL ---
+async function loadAdminPanel() {
+  if (!currentUser) return;
+  const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
+  if (error) { console.error(error); return; }
+  // Stats
+  const total = data.length;
+  const dome = data.filter(r => r.camera_type === 'dome').length;
+  const bullet = data.filter(r => r.camera_type === 'bullet').length;
+  const alpr = data.filter(r => r.camera_type === 'alpr').length;
+  statTotal.textContent = total;
+  statDome.textContent = dome;
+  statBullet.textContent = bullet;
+  statAlpr.textContent = alpr;
+
+  // Chart
+  const ctxChart = statsChartCanvas.getContext('2d');
+  if (statsChart) statsChart.destroy();
+  statsChart = new Chart(ctxChart, {
+    type: 'bar',
+    data: {
+      labels: ['Dome', 'Bullet', 'ALPR', 'Doorbell', 'Traffic', 'Unknown'],
+      datasets: [{ label: 'Camera types', data: [dome, bullet, alpr, data.filter(r => r.camera_type === 'doorbell').length, data.filter(r => r.camera_type === 'traffic').length, data.filter(r => !r.camera_type || r.camera_type === 'unknown').length], backgroundColor: ['#2563eb','#60a5fa','#8b5cf6','#f59e0b','#10b981','#6b7280'] }]
+    },
+    options: { plugins: { legend: { labels: { color: '#aaa' } } }, scales: { y: { beginAtZero: true, ticks: { color: '#888' } }, x: { ticks: { color: '#888' } } } }
+  });
+
+  // Table
+  adminTableBody.innerHTML = data.map(row => `
+    <tr>
+      <td><input type="checkbox" class="row-check" data-id="${row.id}" /></td>
+      <td>${row.id.slice(0,8)}</td>
+      <td>${row.lat?.toFixed(5)}</td>
+      <td>${row.lng?.toFixed(5)}</td>
+      <td>${row.camera_type || 'unknown'}</td>
+      <td>${row.timestamp ? new Date(row.timestamp).toLocaleDateString() : 'N/A'}</td>
+      <td><button class="delete-btn" data-id="${row.id}">Delete</button></td>
+    </tr>
+  `).join('');
+
+  // Delete handlers
+  document.querySelectorAll('.delete-btn').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (confirm('Delete this entry?')) {
+        await supabase.from('intel').delete().eq('id', btn.dataset.id);
+        loadAdminPanel();
+        if (map) loadPins();
+      }
+    });
+  });
+
+  // Bulk delete
+  bulkDeleteBtn.onclick = async () => {
+    const checked = document.querySelectorAll('.row-check:checked');
+    if (checked.length === 0) return;
+    if (confirm(`Delete ${checked.length} entries?`)) {
+      const ids = Array.from(checked).map(cb => cb.dataset.id);
+      await supabase.from('intel').delete().in('id', ids);
+      loadAdminPanel();
+      if (map) loadPins();
+    }
+  };
+
+  selectAll.onchange = () => {
+    document.querySelectorAll('.row-check').forEach(cb => cb.checked = selectAll.checked);
+  };
+}
+
+refreshAdminBtn.addEventListener('click', loadAdminPanel);
+
 // --- INIT ---
-status.textContent = '🔵 App ready. Choose an option.';
-console.log('✅ Modular Surveillance Census loaded.');
+await checkAuth();
+status.textContent = '🔵 App ready. Sign in for full features.';
+console.log('✅ Surveillance Census v2 with Auth, Admin, Aggregation.');
