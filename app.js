@@ -1,28 +1,11 @@
-import { initializeApp } from 'firebase/app';
-import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword, signInWithPopup, GoogleAuthProvider } from 'firebase/auth';
 import { createClient } from '@supabase/supabase-js';
-
-// --- Firebase config (your keys) ---
-const firebaseConfig = {
-  apiKey: "AIzaSyCKaSaIEcfiavKQxcgONvQ_efokk6M36-w",
-  authDomain: "spiderman-e0fcf.firebaseapp.com",
-  projectId: "spiderman-e0fcf",
-  storageBucket: "spiderman-e0fcf.firebasestorage.app",
-  messagingSenderId: "1007889124490",
-  appId: "1:1007889124490:web:8f381aeb08f5d711fd3173",
-  measurementId: "G-FRNY8GY7CK"
-};
-
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const provider = new GoogleAuthProvider();
 
 // --- Supabase config ---
 const supabaseUrl = "https://wswpmifhidycyaseamyf.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indzd3BtaWZoaWR5Y3lhc2VhbXlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5Mjc5MzQsImV4cCI6MjEwMjUwMzkzNH0.zr1Kibn5R6UEz8TEm1KwqBpTfSxNA6Di-eFhic17kR8";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// --- DOM refs ---
+// --- DOM refs (same as before) ---
 const homeView = document.getElementById('homeView');
 const captureView = document.getElementById('captureView');
 const previewView = document.getElementById('previewView');
@@ -102,9 +85,10 @@ let currentUser = null;
 let statsChart = null;
 let gpsTrack = [];
 let trackLayer = null;
+let bikeMarker = null;
 let isCoverageOn = false;
 
-// --- AUTH ---
+// --- AUTH with Supabase ---
 function openAuthModal() { authModal.classList.add('active'); }
 function closeAuthModal() { authModal.classList.remove('active'); authError.textContent = ''; }
 authClose.addEventListener('click', closeAuthModal);
@@ -112,7 +96,7 @@ authModal.addEventListener('click', (e) => { if (e.target === authModal) closeAu
 
 authBtn.addEventListener('click', () => {
   if (currentUser) {
-    auth.signOut();
+    supabase.auth.signOut();
   } else {
     openAuthModal();
   }
@@ -122,12 +106,8 @@ authSignin.addEventListener('click', async () => {
   const email = authEmail.value.trim();
   const password = authPassword.value.trim();
   if (!email || !password) { authError.textContent = 'Enter email and password.'; return; }
-  try {
-    await signInWithEmailAndPassword(auth, email, password);
-    closeAuthModal();
-  } catch (err) {
-    authError.textContent = err.message;
-  }
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) { authError.textContent = error.message; } else { closeAuthModal(); }
 });
 
 authSignup.addEventListener('click', async () => {
@@ -135,30 +115,22 @@ authSignup.addEventListener('click', async () => {
   const password = authPassword.value.trim();
   if (!email || !password) { authError.textContent = 'Enter email and password.'; return; }
   if (password.length < 6) { authError.textContent = 'Password must be at least 6 characters.'; return; }
-  try {
-    await createUserWithEmailAndPassword(auth, email, password);
-    closeAuthModal();
-  } catch (err) {
-    authError.textContent = err.message;
-  }
+  const { error } = await supabase.auth.signUp({ email, password });
+  if (error) { authError.textContent = error.message; } else { alert('Check your email to confirm!'); closeAuthModal(); }
 });
 
 authGoogle.addEventListener('click', async () => {
-  try {
-    await signInWithPopup(auth, provider);
-    closeAuthModal();
-  } catch (err) {
-    authError.textContent = err.message;
-  }
+  const { error } = await supabase.auth.signInWithOAuth({ provider: 'google' });
+  if (error) { authError.textContent = error.message; } else { closeAuthModal(); }
 });
 
-// Admin only for specific UID
+// Admin only for specific UID (your Supabase user ID)
 const ADMIN_UID = "kc9YdMnlpfNUvmPCaVXZjrYxImx2";
 
-onAuthStateChanged(auth, (user) => {
-  currentUser = user;
+supabase.auth.onAuthStateChange((event, session) => {
+  currentUser = session?.user ?? null;
   updateAuthUI();
-  const isAdmin = user && user.uid === ADMIN_UID;
+  const isAdmin = currentUser && currentUser.id === ADMIN_UID;
   if (isAdmin) goAdminBtn.style.display = 'inline-flex';
   else goAdminBtn.style.display = 'none';
   if (map) loadPins();
@@ -190,7 +162,7 @@ function showView(viewId) {
   document.getElementById(viewId).classList.add('active');
   if (viewId === 'homeView') backBtn.style.display = 'none';
   else backBtn.style.display = 'inline-block';
-  if (viewId === 'adminView' && currentUser && currentUser.uid === ADMIN_UID) loadAdminPanel();
+  if (viewId === 'adminView' && currentUser && currentUser.id === ADMIN_UID) loadAdminPanel();
   else if (viewId === 'adminView') { alert('Admin access restricted.'); showView('homeView'); }
   if (viewId === 'mapView' && !map) initMap();
   else if (viewId === 'mapView' && map) map.invalidateSize();
@@ -375,7 +347,7 @@ if (navigator.geolocation) {
   );
 }
 
-// --- UPLOAD (uses Firebase UID) ---
+// --- UPLOAD (uses Supabase user ID) ---
 async function uploadPhoto(blob, camType) {
   if (!currentUser) { alert('Please sign in first!'); return; }
   status.textContent = '📍 Getting GPS...';
@@ -405,7 +377,7 @@ async function uploadPhoto(blob, camType) {
         lat: pos.lat, lng: pos.lng, image_url: publicUrl, filename: filename,
         timestamp: new Date().toISOString(),
         camera_type: camType,
-        user_id: currentUser.uid
+        user_id: currentUser.id  // Supabase user ID
       }]);
     if (insertError) throw insertError;
     status.textContent = `✅ Uploaded! (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`;
@@ -493,7 +465,7 @@ function setLocationToInput(input) {
 startLocBtn.addEventListener('click', () => setLocationToInput(routeStart));
 endLocBtn.addEventListener('click', () => setLocationToInput(routeEnd));
 
-// --- MAP (with fixed icons) ---
+// --- MAP (with bike marker) ---
 function initMap() {
   map = L.map(mapContainer, { zoomControl: false }).setView([18.4861, -69.9312], 14);
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -511,16 +483,17 @@ function initMap() {
   markerCluster = L.markerClusterGroup({ iconCreateFunction: clusterIcon, spiderfyOnMaxZoom: true, maxClusterRadius: 50 });
   map.addLayer(markerCluster);
 
-  // Coverage toggle
+  // Coverage toggle (bike path)
   const coverageToggle = L.Control.extend({
     onAdd: function() {
       const btn = L.DomUtil.create('button', 'coverage-btn');
-      btn.innerHTML = '📍 Coverage';
-      btn.style.cssText = 'background:rgba(20,20,30,0.8);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);color:white;padding:8px 16px;border-radius:30px;cursor:pointer;font-size:13px;margin:10px;';
+      btn.innerHTML = '🚴 Coverage';
+      btn.style.cssText = 'background:rgba(20,20,30,0.85);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);color:white;padding:8px 16px;border-radius:30px;cursor:pointer;font-size:13px;margin:10px;transition:0.2s;';
       btn.onclick = function() {
         isCoverageOn = !isCoverageOn;
         updateCoverage();
-        btn.innerHTML = isCoverageOn ? '📍 Hide Coverage' : '📍 Coverage';
+        btn.innerHTML = isCoverageOn ? '🚴 Hide Coverage' : '🚴 Coverage';
+        btn.style.background = isCoverageOn ? '#2563eb' : 'rgba(20,20,30,0.85)';
       };
       return btn;
     }
@@ -533,13 +506,33 @@ function initMap() {
 function updateCoverage() {
   if (!map) return;
   if (trackLayer) { map.removeLayer(trackLayer); trackLayer = null; }
+  if (bikeMarker) { map.removeLayer(bikeMarker); bikeMarker = null; }
+
   if (!isCoverageOn || gpsTrack.length < 2) return;
+
+  // Draw the route
   const points = gpsTrack.map(p => [p.lat, p.lng]);
-  const polyline = L.polyline(points, { color: '#2563eb', weight: 2, opacity: 0.6, dashArray: '5,5' });
+  const polyline = L.polyline(points, {
+    color: '#2563eb',
+    weight: 3,
+    opacity: 0.7,
+    dashArray: '6,4'
+  });
   trackLayer = polyline.addTo(map);
+
+  // Add bike marker at the latest position
+  const last = gpsTrack[gpsTrack.length - 1];
+  bikeMarker = L.marker([last.lat, last.lng], {
+    icon: L.divIcon({
+      html: '🚴',
+      className: '',
+      iconSize: [32, 32],
+      iconAnchor: [16, 16]
+    })
+  }).addTo(map);
 }
 
-// --- Load pins (with camera icon fixed) ---
+// --- Load pins (public aggregation) ---
 async function loadPins() {
   if (!map) return;
   markerCluster.clearLayers();
@@ -605,7 +598,7 @@ heatmapToggle.addEventListener('click', toggleHeatmap);
 
 // --- ADMIN PANEL (restricted to UID) ---
 async function loadAdminPanel() {
-  if (!currentUser || currentUser.uid !== ADMIN_UID) { alert('Admin access denied.'); return; }
+  if (!currentUser || currentUser.id !== ADMIN_UID) { alert('Admin access denied.'); return; }
   const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
   if (error) { console.error(error); return; }
   const total = data.length;
@@ -677,5 +670,5 @@ async function loadAdminPanel() {
 
 refreshAdminBtn.addEventListener('click', loadAdminPanel);
 
-status.textContent = '🔵 App ready. Sign in with Firebase.';
-console.log('✅ Updated: Google sign-in, admin UID, fixed icons.');
+status.textContent = '🔵 App ready. Sign in with Supabase.';
+console.log('✅ Supabase Auth integrated.');
