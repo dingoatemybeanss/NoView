@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -62,7 +62,7 @@
         <button id="cancelCropBtn" style="display:none;" class="danger">✖️ Cancel</button>
         <button id="uploadBtn" style="display:none;" class="primary">⬆️ Upload</button>
       </div>
-      <div id="status">📷 Point at a camera → Take → Crop → Upload</div>
+      <div id="status">📷 Tap "Take Photo" to start camera</div>
     </div>
 
     <!-- ADMIN MAP VIEW -->
@@ -114,38 +114,34 @@
     let allPins = [];
     let cropStart = null, cropEnd = null, isCropping = false;
 
-    // --- CAMERA ---
+    // --- CAMERA (now triggered by user tap) ---
     async function startCamera() {
       try {
+        status.textContent = '📸 Requesting camera...';
         stream = await navigator.mediaDevices.getUserMedia({ 
           video: { facingMode: 'environment', width: { ideal: 1280 }, height: { ideal: 720 } } 
         });
         video.srcObject = stream;
         await video.play();
         status.textContent = '📷 Ready — frame a camera and tap Take';
+        return true;
       } catch (err) {
         status.textContent = '❌ Camera error: ' + err.message;
+        return false;
       }
     }
-    startCamera();
 
-    // --- GPS ---
-    function getPosition() {
-      return new Promise((resolve) => {
-        if (!navigator.geolocation) {
-          resolve({ lat: 18.4861, lng: -69.9312 });
-          return;
-        }
-        navigator.geolocation.getCurrentPosition(
-          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-          () => resolve({ lat: 18.4861, lng: -69.9312 }),
-          { enableHighAccuracy: true, timeout: 8000 }
-        );
-      });
-    }
+    // --- TAKE PHOTO (now starts camera if needed) ---
+    captureBtn.addEventListener('click', async () => {
+      // 1. Start camera if not already running
+      if (!stream) {
+        const started = await startCamera();
+        if (!started) return;
+        // Small delay for camera to warm up on some devices
+        await new Promise(r => setTimeout(r, 300));
+      }
 
-    // --- TAKE PHOTO ---
-    captureBtn.addEventListener('click', () => {
+      // 2. Capture frame
       const w = video.videoWidth || 1280;
       const h = video.videoHeight || 720;
       canvas.width = w;
@@ -274,7 +270,7 @@
       const pos = await getPosition();
       status.textContent = '⬆️ Uploading...';
       try {
-        const filename = cam_.jpg;
+        const filename = `cam_${Date.now()}.jpg`;
         const { error: uploadError } = await supabase.storage
           .from('cameras')
           .upload(filename, currentFile, {
@@ -299,7 +295,7 @@
           }]);
         if (insertError) throw insertError;
 
-        status.textContent = ✅ Uploaded! (, );
+        status.textContent = `✅ Uploaded! (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`;
         video.style.display = 'block';
         canvas.style.display = 'none';
         captureBtn.style.display = 'inline-block';
@@ -312,6 +308,21 @@
         status.textContent = '❌ Error: ' + err.message;
       }
     });
+
+    // --- GPS ---
+    function getPosition() {
+      return new Promise((resolve) => {
+        if (!navigator.geolocation) {
+          resolve({ lat: 18.4861, lng: -69.9312 });
+          return;
+        }
+        navigator.geolocation.getCurrentPosition(
+          (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
+          () => resolve({ lat: 18.4861, lng: -69.9312 }),
+          { enableHighAccuracy: true, timeout: 8000 }
+        );
+      });
+    }
 
     // --- ADMIN MAP ---
     function initMap() {
@@ -338,15 +349,15 @@
         if (!lat || !lng) return;
         allPins.push({ lat, lng, imageUrl: row.image_url, timestamp: row.timestamp });
         const marker = L.marker([lat, lng]);
-        marker.bindPopup(
+        marker.bindPopup(`
           <div class="custom-popup">
-            <strong></strong><br/>
-            <img src="" alt="camera" />
+            <strong>${row.timestamp ? new Date(row.timestamp).toLocaleString() : 'N/A'}</strong><br/>
+            <img src="${row.image_url}" alt="camera" />
           </div>
-        );
+        `);
         markerLayer.addLayer(marker);
       });
-      pinCount.textContent = 📍  cameras;
+      pinCount.textContent = `📍 ${allPins.length} cameras`;
       if (isHeatmapOn) toggleHeatmap();
     }
 
@@ -381,11 +392,14 @@
         mapView.classList.remove('active');
         modeToggle.textContent = '🗺️ Admin';
         modeToggle.classList.remove('active');
-        startCamera();
+        // Re-trigger camera on next "Take Photo" tap
+        stream = null;
+        video.srcObject = null;
+        status.textContent = '📷 Tap "Take Photo" to start camera';
       }
     });
 
-    console.log('✅ Surveillance Census ready (Supabase). Go bike!');
+    console.log('✅ Surveillance Census ready. Tap "Take Photo" to start camera.');
   </script>
 </body>
 </html>
