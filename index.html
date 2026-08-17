@@ -5,34 +5,74 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
   <title>Surveillance Census</title>
 
+  <!-- Leaflet + Cluster + Heat -->
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css" />
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://unpkg.com/leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"></script>
   <script src="https://unpkg.com/leaflet-heat@0.2.0/dist/leaflet-heat.js"></script>
 
+  <!-- Turf.js for route buffer & point-in-polygon -->
+  <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; user-select: none; -webkit-touch-callout: none; }
-    body { background: #0a0a0a; color: white; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+    * { margin: 0; padding: 0; box-sizing: border-box; font-family: 'Inter', system-ui, -apple-system, sans-serif; user-select: none; -webkit-touch-callout: none; }
+    body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
 
-    /* Header with back button */
-    #header { padding: 12px 16px; background: #1a1a1a; display: flex; align-items: center; border-bottom: 1px solid #333; flex-shrink: 0; z-index: 10; gap: 12px; }
-    #header h1 { font-size: 17px; font-weight: 600; flex: 1; }
-    #header h1 span { color: #60a5fa; }
-    .back-btn { background: #2a2a2a; border: 1px solid #444; color: white; padding: 4px 12px; border-radius: 16px; cursor: pointer; font-size: 14px; display: none; }
-    .back-btn:hover { background: #3a3a3a; }
+    /* --- GLASSMORPHISM HEADER --- */
+    #header {
+      padding: 12px 20px;
+      background: rgba(20, 20, 30, 0.7);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+      display: flex;
+      align-items: center;
+      flex-shrink: 0;
+      z-index: 10;
+      gap: 12px;
+    }
+    #header h1 { font-size: 18px; font-weight: 600; flex: 1; letter-spacing: -0.3px; }
+    #header h1 span { background: linear-gradient(135deg, #60a5fa, #2563eb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .back-btn {
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.1);
+      color: #ccc;
+      padding: 4px 14px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 14px;
+      display: none;
+      transition: 0.2s;
+    }
+    .back-btn:hover { background: rgba(255,255,255,0.12); }
 
-    #viewContainer { flex: 1; position: relative; overflow: hidden; background: #111; }
+    #viewContainer { flex: 1; position: relative; overflow: hidden; background: #0a0a0a; }
 
-    /* --- HOME VIEW --- */
-    #homeView { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 24px; padding: 20px; }
+    /* --- HOME --- */
+    #homeView { display: none; flex-direction: column; align-items: center; justify-content: center; height: 100%; gap: 20px; padding: 20px; background: radial-gradient(circle at 20% 30%, #111, #0a0a0a); }
     #homeView.active { display: flex; }
-    #homeView h2 { font-size: 22px; font-weight: 400; color: #ccc; }
-    .home-btn { width: 80%; max-width: 300px; padding: 20px; border: none; border-radius: 16px; font-size: 20px; font-weight: 600; cursor: pointer; transition: 0.2s; }
-    .home-btn.camera { background: #2563eb; color: white; }
-    .home-btn.camera:hover { background: #1d4ed8; }
-    .home-btn.map { background: #2a2a2a; color: white; border: 1px solid #444; }
-    .home-btn.map:hover { background: #3a3a3a; }
+    #homeView h2 { font-size: 24px; font-weight: 400; color: #aaa; }
+    #homeView .sub { font-size: 14px; color: #666; margin-top: -8px; }
+    .home-btn {
+      width: 80%; max-width: 300px; padding: 18px;
+      border: none; border-radius: 16px;
+      font-size: 18px; font-weight: 600; cursor: pointer;
+      transition: transform 0.15s, box-shadow 0.2s;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.06);
+      color: white;
+    }
+    .home-btn:active { transform: scale(0.96); }
+    .home-btn.camera { background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; box-shadow: 0 8px 24px rgba(37,99,235,0.25); }
+    .home-btn.camera:hover { box-shadow: 0 8px 32px rgba(37,99,235,0.4); }
+    .home-btn.map { background: rgba(255,255,255,0.04); border-color: rgba(255,255,255,0.08); }
+    .home-btn.map:hover { background: rgba(255,255,255,0.08); }
+    .home-btn.route { background: rgba(16,185,129,0.15); border-color: rgba(16,185,129,0.2); }
+    .home-btn.route:hover { background: rgba(16,185,129,0.25); }
 
-    /* --- CAPTURE VIEW --- */
+    /* --- CAPTURE --- */
     #captureView { display: none; flex-direction: column; height: 100%; width: 100%; position: relative; background: #000; }
     #captureView.active { display: flex; }
     #captureView video { width: 100%; height: 100%; object-fit: cover; }
@@ -50,9 +90,10 @@
     }
     #openCameraBtn {
       position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
-      background: #2563eb; border: none; color: white; padding: 14px 32px;
+      background: linear-gradient(135deg, #2563eb, #1d4ed8);
+      border: none; color: white; padding: 14px 32px;
       border-radius: 40px; font-size: 18px; font-weight: 600; cursor: pointer;
-      z-index: 20; box-shadow: 0 4px 20px rgba(37,99,235,0.4);
+      z-index: 20; box-shadow: 0 8px 24px rgba(37,99,235,0.3);
     }
     #captureStatus {
       position: absolute; top: 16px; left: 16px; right: 16px;
@@ -61,38 +102,79 @@
       pointer-events: none;
     }
 
-    /* --- PREVIEW VIEW --- */
+    /* --- PREVIEW --- */
     #previewView { display: none; flex-direction: column; height: 100%; width: 100%; background: #111; }
     #previewView.active { display: flex; }
     #previewView .preview-img { flex: 1; background: #000; display: flex; align-items: center; justify-content: center; overflow: hidden; }
     #previewView .preview-img img { max-width: 100%; max-height: 100%; object-fit: contain; }
-    #previewControls { display: flex; gap: 12px; padding: 16px; background: #1a1a1a; justify-content: center; }
-    #previewControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; }
-    #previewControls .retake { background: #444; color: white; }
-    #previewControls .crop { background: #2563eb; color: white; }
+    #previewControls { display: flex; gap: 12px; padding: 16px; background: rgba(20,20,30,0.8); backdrop-filter: blur(8px); justify-content: center; }
+    #previewControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; }
+    #previewControls .retake { background: rgba(255,255,255,0.08); color: white; }
+    #previewControls .retake:hover { background: rgba(255,255,255,0.15); }
+    #previewControls .crop { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; }
+    #previewControls .crop:hover { box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
 
-    /* --- CROP VIEW (flicker‑free) --- */
+    /* --- CROP (smooth) --- */
     #cropView { display: none; flex-direction: column; height: 100%; width: 100%; background: #000; }
     #cropView.active { display: flex; }
     #cropView .crop-container { flex: 1; position: relative; display: flex; align-items: center; justify-content: center; overflow: hidden; touch-action: none; background: #000; }
     #cropView .crop-container canvas { max-width: 100%; max-height: 100%; touch-action: none; cursor: crosshair; }
-    #cropControls { display: flex; gap: 12px; padding: 16px; background: #1a1a1a; justify-content: center; }
-    #cropControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; }
-    #cropControls .cancel-crop { background: #444; color: white; }
-    #cropControls .confirm-crop { background: #2563eb; color: white; }
+    #cropControls { display: flex; gap: 12px; padding: 16px; background: rgba(20,20,30,0.8); backdrop-filter: blur(8px); justify-content: center; }
+    #cropControls button { padding: 12px 28px; border: none; border-radius: 30px; font-weight: 600; font-size: 16px; cursor: pointer; transition: 0.2s; }
+    #cropControls .cancel-crop { background: rgba(255,255,255,0.08); color: white; }
+    #cropControls .cancel-crop:hover { background: rgba(255,255,255,0.15); }
+    #cropControls .confirm-crop { background: linear-gradient(135deg, #2563eb, #1d4ed8); color: white; }
+    #cropControls .confirm-crop:hover { box-shadow: 0 4px 16px rgba(37,99,235,0.3); }
     #cropStatus { color: #aaa; font-size: 14px; text-align: center; padding: 8px; background: #111; }
 
-    /* --- MAP VIEW --- */
+    /* --- MAP --- */
     #mapView { display: none; height: 100%; width: 100%; position: relative; }
     #mapView.active { display: block; }
     #map { height: 100%; width: 100%; }
-    #heatmapToggle { position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%); background: #1a1a1a; border: 1px solid #444; color: white; padding: 10px 24px; border-radius: 30px; cursor: pointer; font-size: 14px; z-index: 1000; transition: 0.2s; }
+    #heatmapToggle, #exportBtn {
+      position: absolute; bottom: 24px;
+      background: rgba(20,20,30,0.8); backdrop-filter: blur(8px);
+      border: 1px solid rgba(255,255,255,0.08); color: white;
+      padding: 10px 20px; border-radius: 30px; cursor: pointer;
+      font-size: 14px; z-index: 1000; transition: 0.2s;
+    }
+    #heatmapToggle { left: 50%; transform: translateX(-50%); }
+    #exportBtn { right: 16px; bottom: 24px; }
     #heatmapToggle.active { background: #2563eb; border-color: #2563eb; }
-    #pinCount { position: absolute; top: 12px; right: 12px; background: rgba(0,0,0,0.75); padding: 6px 14px; border-radius: 20px; font-size: 13px; z-index: 1000; border: 1px solid #333; }
-    .custom-popup img { max-width: 180px; border-radius: 6px; margin-top: 4px; border: 1px solid #ddd; }
+
+    /* --- ROUTE VIEW --- */
+    #routeView { display: none; flex-direction: column; height: 100%; padding: 16px; background: #0a0a0a; gap: 12px; }
+    #routeView.active { display: flex; }
+    #routeView h3 { color: #ccc; font-weight: 400; font-size: 18px; }
+    .route-input-group { display: flex; flex-direction: column; gap: 8px; }
+    .route-input-group input { padding: 12px; border-radius: 12px; border: 1px solid #333; background: #1a1a1a; color: white; font-size: 16px; }
+    .route-input-group input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+    #calcRouteBtn { padding: 14px; background: linear-gradient(135deg, #2563eb, #1d4ed8); border: none; color: white; font-weight: 600; border-radius: 30px; font-size: 16px; cursor: pointer; }
+    #routeResult { background: #1a1a1a; border-radius: 12px; padding: 16px; color: #ccc; font-size: 14px; min-height: 40px; border: 1px solid #2a2a2a; flex: 1; overflow-y: auto; }
+    .route-result-score { font-size: 32px; font-weight: 700; background: linear-gradient(135deg, #60a5fa, #2563eb); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+    .custom-popup img { max-width: 200px; border-radius: 6px; margin-top: 4px; border: 1px solid #ddd; }
     .custom-popup { color: #111; font-size: 13px; }
 
-    .status-bar { color: #aaa; font-size: 13px; padding: 8px 16px; background: #0a0a0a; border-top: 1px solid #222; text-align: center; flex-shrink: 0; }
+    .status-bar { color: #888; font-size: 13px; padding: 8px 16px; background: #0a0a0a; border-top: 1px solid #1a1a1a; text-align: center; flex-shrink: 0; }
+
+    /* cluster icon override */
+    .marker-cluster-custom {
+      background: #2563eb;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 16px;
+      box-shadow: 0 0 0 3px #0a0a0a;
+    }
+
+    /* scrollable route result */
+    #routeResult pre { white-space: pre-wrap; word-break: break-all; }
   </style>
 </head>
 <body>
@@ -107,8 +189,10 @@
   <!-- HOME -->
   <div id="homeView" class="active">
     <h2>What do you want to do?</h2>
+    <div class="sub">Map the surveillance state.</div>
     <button class="home-btn camera" id="goCameraBtn">📸 Take Photos</button>
     <button class="home-btn map" id="goMapBtn">🗺️ View Map</button>
+    <button class="home-btn route" id="goRouteBtn">🛣️ Route Exposure Score</button>
   </div>
 
   <!-- CAPTURE -->
@@ -141,9 +225,21 @@
   <!-- MAP -->
   <div id="mapView">
     <div id="map"></div>
-    <div id="pinCount">📍 0 cameras</div>
     <button id="heatmapToggle">🔥 Heatmap</button>
+    <button id="exportBtn">📥 Export GeoJSON</button>
   </div>
+
+  <!-- ROUTE SCORER -->
+  <div id="routeView">
+    <h3>🛣️ Surveillance Exposure Score</h3>
+    <div class="route-input-group">
+      <input type="text" id="routeStart" placeholder="Start address or lat,lng" />
+      <input type="text" id="routeEnd" placeholder="End address or lat,lng" />
+    </div>
+    <button id="calcRouteBtn">Calculate Exposure</button>
+    <div id="routeResult">Enter a route and hit calculate.</div>
+  </div>
+
 </div>
 
 <div class="status-bar" id="status">🔵 Ready</div>
@@ -159,6 +255,7 @@
 <script type="module">
 import { createClient } from '@supabase/supabase-js';
 
+// --- CONFIG ---
 const supabaseUrl = "https://wswpmifhidycyaseamyf.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indzd3BtaWZoaWR5Y3lhc2VhbXlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5Mjc5MzQsImV4cCI6MjEwMjUwMzkzNH0.zr1Kibn5R6UEz8TEm1KwqBpTfSxNA6Di-eFhic17kR8";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -169,9 +266,11 @@ const captureView = document.getElementById('captureView');
 const previewView = document.getElementById('previewView');
 const cropView = document.getElementById('cropView');
 const mapView = document.getElementById('mapView');
+const routeView = document.getElementById('routeView');
 const backBtn = document.getElementById('backBtn');
 const goCameraBtn = document.getElementById('goCameraBtn');
 const goMapBtn = document.getElementById('goMapBtn');
+const goRouteBtn = document.getElementById('goRouteBtn');
 
 const video = document.getElementById('videoPreview');
 const canvas = document.getElementById('cropCanvas');
@@ -188,21 +287,27 @@ const cropStatus = document.getElementById('cropStatus');
 const status = document.getElementById('status');
 const mapContainer = document.getElementById('map');
 const heatmapToggle = document.getElementById('heatmapToggle');
-const pinCount = document.getElementById('pinCount');
+const exportBtn = document.getElementById('exportBtn');
+
+// Route elements
+const routeStart = document.getElementById('routeStart');
+const routeEnd = document.getElementById('routeEnd');
+const calcRouteBtn = document.getElementById('calcRouteBtn');
+const routeResult = document.getElementById('routeResult');
 
 let stream = null;
 let capturedImageData = null;
 let croppedBlob = null;
 let map = null;
-let markerLayer = null;
+let markerCluster = null;
 let heatLayer = null;
 let isHeatmapOn = false;
 let allPins = [];
 let cropStart = null, cropEnd = null, isCropping = false;
 
-// --- Navigation ---
+// --- NAVIGATION ---
 function showView(viewId) {
-  [homeView, captureView, previewView, cropView, mapView].forEach(v => v.classList.remove('active'));
+  [homeView, captureView, previewView, cropView, mapView, routeView].forEach(v => v.classList.remove('active'));
   document.getElementById(viewId).classList.add('active');
   if (viewId === 'homeView') backBtn.style.display = 'none';
   else backBtn.style.display = 'inline-block';
@@ -210,19 +315,19 @@ function showView(viewId) {
 
 goCameraBtn.addEventListener('click', () => {
   showView('captureView');
-  // If camera not started, auto-start
   if (!stream) startCamera();
   else { video.srcObject = stream; video.play(); captureStatus.textContent = '📷 Ready'; }
 });
-
 goMapBtn.addEventListener('click', () => {
   showView('mapView');
   if (!map) initMap();
   else map.invalidateSize();
 });
+goRouteBtn.addEventListener('click', () => {
+  showView('routeView');
+});
 
 backBtn.addEventListener('click', () => {
-  // If in capture, stop camera to save battery
   if (captureView.classList.contains('active') && stream) {
     stream.getTracks().forEach(t => t.stop());
     stream = null;
@@ -230,7 +335,7 @@ backBtn.addEventListener('click', () => {
   showView('homeView');
 });
 
-// --- Camera ---
+// --- CAMERA (with GPS accuracy improvement) ---
 async function startCamera() {
   try {
     captureStatus.textContent = '📸 Requesting camera...';
@@ -247,10 +352,9 @@ async function startCamera() {
     status.textContent = '❌ Camera error: ' + err.message;
   }
 }
-
 openCameraBtn.addEventListener('click', startCamera);
 
-// --- Shutter ---
+// --- SHUTTER ---
 shutterBtn.addEventListener('click', () => {
   const w = video.videoWidth || 1280;
   const h = video.videoHeight || 720;
@@ -265,21 +369,17 @@ shutterBtn.addEventListener('click', () => {
   showView('previewView');
 });
 
-// --- Preview ---
+// --- PREVIEW ---
 retakeBtn.addEventListener('click', () => {
   showView('captureView');
   if (stream) { video.srcObject = stream; video.play(); captureStatus.textContent = '📷 Retake — frame it again'; }
 });
-
 cropBtn.addEventListener('click', () => {
-  // Load image into crop canvas
   const img = new Image();
   img.onload = () => {
-    // Store the original image as an Image object for flicker-free drawing
     canvas.width = img.width;
     canvas.height = img.height;
     ctx.drawImage(img, 0, 0);
-    // Store the image object for redraw
     canvas._img = img;
     cropStart = null; cropEnd = null;
     cropStatus.textContent = '✂️ Drag a rectangle around the camera';
@@ -288,7 +388,7 @@ cropBtn.addEventListener('click', () => {
   img.src = previewImg.src;
 });
 
-// --- Flicker-free crop (uses drawImage) ---
+// --- CROP (flicker-free) ---
 function getCanvasCoords(e) {
   const rect = canvas.getBoundingClientRect();
   const scaleX = canvas.width / rect.width;
@@ -298,33 +398,23 @@ function getCanvasCoords(e) {
   const y = (ev.clientY - rect.top) * scaleY;
   return { x: Math.min(Math.max(x, 0), canvas.width), y: Math.min(Math.max(y, 0), canvas.height) };
 }
-
 function drawCropOverlay() {
   if (!canvas._img) return;
-  // Redraw the original image
   ctx.clearRect(0, 0, canvas.width, canvas.height);
   ctx.drawImage(canvas._img, 0, 0, canvas.width, canvas.height);
   if (!cropStart || !cropEnd) return;
-
   const sx = Math.min(cropStart.x, cropEnd.x);
   const sy = Math.min(cropStart.y, cropEnd.y);
   const sw = Math.abs(cropEnd.x - cropStart.x);
   const sh = Math.abs(cropEnd.y - cropStart.y);
-
-  // Dark overlay outside the selection
   ctx.fillStyle = 'rgba(0,0,0,0.5)';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  // Clear the selected area (reveal the image)
   ctx.clearRect(sx, sy, sw, sh);
-  // Redraw the selected portion on top (for crispness)
   ctx.drawImage(canvas._img, sx, sy, sw, sh, sx, sy, sw, sh);
-  // Draw a bright border around the selection
   ctx.strokeStyle = '#00ff88';
   ctx.lineWidth = 3;
   ctx.strokeRect(sx, sy, sw, sh);
 }
-
-// Mouse events
 canvas.addEventListener('mousedown', (e) => {
   isCropping = true;
   const p = getCanvasCoords(e);
@@ -354,8 +444,6 @@ window.addEventListener('mouseup', () => {
     }
   }
 });
-
-// Touch events
 canvas.addEventListener('touchstart', (e) => {
   e.preventDefault();
   isCropping = true;
@@ -388,7 +476,7 @@ window.addEventListener('touchend', (e) => {
   }
 }, { passive: false });
 
-// --- Confirm crop (clean drawImage) ---
+// --- CONFIRM CROP & UPLOAD with duplicate check ---
 confirmCropBtn.addEventListener('click', async () => {
   if (!cropStart || !cropEnd) { cropStatus.textContent = '⚠️ Drag a rectangle first!'; return; }
   const sx = Math.min(cropStart.x, cropEnd.x);
@@ -396,13 +484,11 @@ confirmCropBtn.addEventListener('click', async () => {
   const sw = Math.abs(cropEnd.x - cropStart.x);
   const sh = Math.abs(cropEnd.y - cropStart.y);
   if (sw < 10 || sh < 10) { cropStatus.textContent = '⚠️ Selection too small'; return; }
-
   cropStatus.textContent = '✂️ Cropping...';
   const cropCanvas = document.createElement('canvas');
   cropCanvas.width = sw;
   cropCanvas.height = sh;
   const cctx = cropCanvas.getContext('2d');
-  // Use drawImage to crop crisply from the stored image
   cctx.drawImage(canvas._img, sx, sy, sw, sh, 0, 0, sw, sh);
   cropCanvas.toBlob(async (blob) => {
     if (!blob) { cropStatus.textContent = '❌ Crop failed'; return; }
@@ -410,14 +496,81 @@ confirmCropBtn.addEventListener('click', async () => {
   }, 'image/jpeg', 0.92);
 });
 
-cancelCropBtn.addEventListener('click', () => {
-  showView('previewView');
-});
+cancelCropBtn.addEventListener('click', () => { showView('previewView'); });
 
-// --- Upload (already working, no changes needed) ---
+// --- GPS with averaging (improved accuracy) ---
+function getAccuratePosition() {
+  return new Promise((resolve) => {
+    if (!navigator.geolocation) {
+      resolve({ lat: 18.4861, lng: -69.9312 });
+      return;
+    }
+    let readings = [];
+    let watchId = navigator.geolocation.watchPosition(
+      (pos) => {
+        readings.push({ lat: pos.coords.latitude, lng: pos.coords.longitude, acc: pos.coords.accuracy });
+        if (readings.length >= 5) {
+          navigator.geolocation.clearWatch(watchId);
+          // average readings with accuracy weighting (lower acc = better)
+          let totalWeight = 0;
+          let avgLat = 0, avgLng = 0;
+          readings.forEach(r => {
+            const w = 1 / (r.acc + 1);
+            avgLat += r.lat * w;
+            avgLng += r.lng * w;
+            totalWeight += w;
+          });
+          avgLat /= totalWeight;
+          avgLng /= totalWeight;
+          resolve({ lat: avgLat, lng: avgLng });
+        }
+      },
+      (err) => {
+        navigator.geolocation.clearWatch(watchId);
+        resolve({ lat: 18.4861, lng: -69.9312 });
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 2000 }
+    );
+    // fallback if watch takes too long
+    setTimeout(() => {
+      if (readings.length < 3) {
+        navigator.geolocation.clearWatch(watchId);
+        resolve({ lat: 18.4861, lng: -69.9312 });
+      }
+    }, 12000);
+  });
+}
+
+// --- UPLOAD with duplicate check ---
 async function uploadPhoto(blob) {
-  status.textContent = '📍 Getting GPS...';
-  const pos = await getPosition();
+  status.textContent = '📍 Getting GPS (accurate)...';
+  const pos = await getAccuratePosition();
+
+  // Duplicate check: see if any pin within 15 meters
+  status.textContent = '🔍 Checking for duplicates...';
+  const { data: nearby, error: nearbyError } = await supabase
+    .from('intel')
+    .select('id, lat, lng')
+    .filter('lat', 'gte', pos.lat - 0.00015)
+    .filter('lat', 'lte', pos.lat + 0.00015)
+    .filter('lng', 'gte', pos.lng - 0.00015)
+    .filter('lng', 'lte', pos.lng + 0.00015);
+  if (!nearbyError && nearby && nearby.length > 0) {
+    // Check actual distance
+    const close = nearby.filter(p => {
+      const d = turf.distance(turf.point([pos.lng, pos.lat]), turf.point([p.lng, p.lat]), { units: 'meters' });
+      return d < 15;
+    });
+    if (close.length > 0) {
+      const confirm = confirm(`⚠️ Found ${close.length} camera(s) within 15m. Still upload?`);
+      if (!confirm) {
+        status.textContent = '❌ Upload cancelled (duplicate)';
+        cropStatus.textContent = '❌ Cancelled – duplicate nearby';
+        return;
+      }
+    }
+  }
+
   status.textContent = '⬆️ Uploading...';
   try {
     const filename = `cam_${Date.now()}.jpg`;
@@ -425,10 +578,8 @@ async function uploadPhoto(blob) {
       .from('intel')
       .upload(filename, blob, { contentType: 'image/jpeg', cacheControl: '3600' });
     if (uploadError) throw uploadError;
-
     const { data: urlData } = supabase.storage.from('intel').getPublicUrl(filename);
     const publicUrl = urlData.publicUrl;
-
     const { error: insertError } = await supabase
       .from('intel')
       .insert([{
@@ -439,13 +590,10 @@ async function uploadPhoto(blob) {
         timestamp: new Date().toISOString()
       }]);
     if (insertError) throw insertError;
-
     status.textContent = `✅ Uploaded! (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`;
-    // Reset UI
     cropStart = null; cropEnd = null;
     if (map) loadPins();
     showView('homeView');
-    // Release camera
     if (stream) { stream.getTracks().forEach(t => t.stop()); stream = null; }
   } catch (err) {
     status.textContent = '❌ Error: ' + err.message;
@@ -453,25 +601,30 @@ async function uploadPhoto(blob) {
   }
 }
 
-function getPosition() {
-  return new Promise((resolve) => {
-    if (!navigator.geolocation) {
-      resolve({ lat: 18.4861, lng: -69.9312 });
-      return;
-    }
-    navigator.geolocation.getCurrentPosition(
-      (pos) => resolve({ lat: pos.coords.latitude, lng: pos.coords.longitude }),
-      () => resolve({ lat: 18.4861, lng: -69.9312 }),
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
-  });
-}
-
-// --- Map (Admin) ---
+// --- MAP with clustering and fit bounds ---
 function initMap() {
-  map = L.map(mapContainer).setView([18.4861, -69.9312], 13);
+  const defaultLat = 18.4861;
+  const defaultLng = -69.9312;
+  map = L.map(mapContainer).setView([defaultLat, defaultLng], 14);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { attribution: '© OSM' }).addTo(map);
-  markerLayer = L.layerGroup().addTo(map);
+
+  const clusterIcon = function(cluster) {
+    const count = cluster.getChildCount();
+    return L.divIcon({
+      html: `<div style="background:#2563eb;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 0 0 3px #0a0a0a;">${count}</div>`,
+      className: '',
+      iconSize: [40, 40]
+    });
+  };
+
+  markerCluster = L.markerClusterGroup({
+    iconCreateFunction: clusterIcon,
+    spiderfyOnMaxZoom: true,
+    showCoverageOnHover: false,
+    maxClusterRadius: 50,
+    spiderfyDistanceMultiplier: 1.5
+  });
+  map.addLayer(markerCluster);
   loadPins();
 }
 
@@ -479,29 +632,36 @@ async function loadPins() {
   if (!map) return;
   const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
   if (error) { console.error(error); return; }
-  markerLayer.clearLayers();
+  markerCluster.clearLayers();
   allPins = [];
   data.forEach((row) => {
     if (!row.lat || !row.lng) return;
     allPins.push({ lat: row.lat, lng: row.lng, imageUrl: row.image_url, timestamp: row.timestamp });
-    const marker = L.marker([row.lat, row.lng]);
+    const marker = L.marker([row.lat, row.lng], {
+      icon: L.divIcon({ html: '📷', className: '', iconSize: [24, 24], iconAnchor: [12, 12] })
+    });
     marker.bindPopup(`
       <div class="custom-popup">
         <strong>${row.timestamp ? new Date(row.timestamp).toLocaleString() : 'N/A'}</strong><br/>
         <img src="${row.image_url}" alt="camera" />
       </div>
     `);
-    markerLayer.addLayer(marker);
+    markerCluster.addLayer(marker);
   });
-  pinCount.textContent = `📍 ${allPins.length} cameras`;
+  // Fit bounds to all pins
+  if (allPins.length > 0) {
+    const bounds = markerCluster.getBounds();
+    if (bounds.isValid()) map.fitBounds(bounds, { padding: [40, 40] });
+  }
   if (isHeatmapOn) toggleHeatmap();
 }
 
+// --- HEATMAP toggle ---
 function toggleHeatmap() {
   if (!map) return;
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
   isHeatmapOn = !isHeatmapOn;
-  heatmapToggle.textContent = isHeatmapOn ? '❄️ Hide' : '🔥 Heatmap';
+  heatmapToggle.textContent = isHeatmapOn ? '❄️ Hide Heatmap' : '🔥 Heatmap';
   heatmapToggle.classList.toggle('active', isHeatmapOn);
   if (isHeatmapOn && allPins.length > 0) {
     const points = allPins.map(p => [p.lat, p.lng, 1]);
@@ -511,8 +671,70 @@ function toggleHeatmap() {
 }
 heatmapToggle.addEventListener('click', toggleHeatmap);
 
+// --- EXPORT GeoJSON ---
+exportBtn.addEventListener('click', () => {
+  if (allPins.length === 0) { alert('No cameras to export.'); return; }
+  const features = allPins.map(p => ({
+    type: 'Feature',
+    geometry: { type: 'Point', coordinates: [p.lng, p.lat] },
+    properties: { image_url: p.imageUrl, timestamp: p.timestamp }
+  }));
+  const geojson = { type: 'FeatureCollection', features };
+  const blob = new Blob([JSON.stringify(geojson, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `surveillance_cameras_${new Date().toISOString().slice(0,10)}.geojson`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// --- ROUTE SCORER (uses Turf.js + OSRM) ---
+calcRouteBtn.addEventListener('click', async () => {
+  const start = routeStart.value.trim() || '18.4861,-69.9312';
+  const end = routeEnd.value.trim() || '18.5061,-69.9412';
+  routeResult.innerHTML = '⏳ Calculating route...';
+
+  try {
+    // Geocode (simple – expects lat,lng or we use OSRM's geocode? We'll just use OSRM routing with coordinates)
+    // For simplicity, assume user enters lat,lng. Could add geocoding later.
+    const startCoords = start.split(',').map(Number);
+    const endCoords = end.split(',').map(Number);
+    if (startCoords.length !== 2 || endCoords.length !== 2 || isNaN(startCoords[0]) || isNaN(startCoords[1])) {
+      routeResult.innerHTML = '❌ Please enter lat,lng (e.g., 18.4861,-69.9312)';
+      return;
+    }
+    const url = `https://router.project-osrm.org/route/v1/driving/${startCoords[1]},${startCoords[0]};${endCoords[1]},${endCoords[0]}?overview=full&geometries=geojson`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (!data.routes || data.routes.length === 0) { routeResult.innerHTML = '❌ No route found.'; return; }
+    const routeGeo = data.routes[0].geometry;
+    const routeLine = turf.lineString(routeGeo.coordinates);
+    // Buffer 50 meters
+    const buffered = turf.buffer(routeLine, 50, { units: 'meters' });
+    // Count cameras inside buffer
+    let inside = 0;
+    allPins.forEach(p => {
+      const pt = turf.point([p.lng, p.lat]);
+      if (turf.booleanPointInPolygon(pt, buffered)) inside++;
+    });
+    const total = allPins.length;
+    routeResult.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        <div>Route length: <strong>${(data.routes[0].distance / 1000).toFixed(2)} km</strong></div>
+        <div>Cameras within 50m: <span class="route-result-score">${inside}</span></div>
+        <div>Total cameras in DB: ${total}</div>
+        <div style="font-size:13px;color:#888;">Exposure density: ${total > 0 ? (inside / total * 100).toFixed(1) : 0}% of all cameras</div>
+      </div>
+    `;
+  } catch (err) {
+    routeResult.innerHTML = '❌ Error: ' + err.message;
+  }
+});
+
+// --- INIT ---
 status.textContent = '🔵 App ready. Choose an option.';
-console.log('✅ Surveillance Census with menu and smooth crop.');
+console.log('✅ Surveillance Census v2 with route scoring, export, duplicate check, fit bounds.');
 </script>
 </body>
 </html>
