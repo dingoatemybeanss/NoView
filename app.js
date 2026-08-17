@@ -1,11 +1,27 @@
+import { initializeApp } from 'firebase/app';
+import { getAuth, onAuthStateChanged, signInWithEmailAndPassword, createUserWithEmailAndPassword } from 'firebase/auth';
 import { createClient } from '@supabase/supabase-js';
 
-// --- CONFIG ---
+// --- Firebase config (your actual keys) ---
+const firebaseConfig = {
+  apiKey: "AIzaSyCKaSaIEcfiavKQxcgONvQ_efokk6M36-w",
+  authDomain: "spiderman-e0fcf.firebaseapp.com",
+  projectId: "spiderman-e0fcf",
+  storageBucket: "spiderman-e0fcf.firebasestorage.app",
+  messagingSenderId: "1007889124490",
+  appId: "1:1007889124490:web:8f381aeb08f5d711fd3173",
+  measurementId: "G-FRNY8GY7CK"
+};
+
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+
+// --- Supabase config (unchanged) ---
 const supabaseUrl = "https://wswpmifhidycyaseamyf.supabase.co";
 const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Indzd3BtaWZoaWR5Y3lhc2VhbXlmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY5Mjc5MzQsImV4cCI6MjEwMjUwMzkzNH0.zr1Kibn5R6UEz8TEm1KwqBpTfSxNA6Di-eFhic17kR8";
 const supabase = createClient(supabaseUrl, supabaseAnonKey);
 
-// --- DOM refs ---
+// --- DOM refs (same as before) ---
 const homeView = document.getElementById('homeView');
 const captureView = document.getElementById('captureView');
 const previewView = document.getElementById('previewView');
@@ -20,6 +36,16 @@ const goRouteBtn = document.getElementById('goRouteBtn');
 const goAdminBtn = document.getElementById('goAdminBtn');
 const authBtn = document.getElementById('authBtn');
 const aboutBtn = document.getElementById('aboutBtn');
+
+// Auth modal
+const authModal = document.getElementById('authModal');
+const authEmail = document.getElementById('authEmail');
+const authPassword = document.getElementById('authPassword');
+const authSignin = document.getElementById('authSignin');
+const authSignup = document.getElementById('authSignup');
+const authClose = document.getElementById('authClose');
+const authError = document.getElementById('authError');
+
 const modal = document.getElementById('aboutModal');
 const modalClose = document.getElementById('modalClose');
 const modalCloseBtn = document.getElementById('modalCloseBtn');
@@ -40,7 +66,6 @@ const cameraTypeSelect = document.getElementById('cameraTypeSelect');
 const status = document.getElementById('status');
 const mapContainer = document.getElementById('map');
 const heatmapToggle = document.getElementById('heatmapToggle');
-const exportBtn = document.getElementById('exportBtn');
 const mapStatus = document.getElementById('mapStatus');
 
 const routeStart = document.getElementById('routeStart');
@@ -51,7 +76,6 @@ const routeResult = document.getElementById('routeResult');
 const startLocBtn = document.getElementById('startLocBtn');
 const endLocBtn = document.getElementById('endLocBtn');
 
-// Admin refs
 const adminTableBody = document.getElementById('adminTableBody');
 const refreshAdminBtn = document.getElementById('refreshAdminBtn');
 const bulkDeleteBtn = document.getElementById('bulkDeleteBtn');
@@ -74,16 +98,56 @@ let cropStart = null, cropEnd = null, isCropping = false;
 let cropRAF = null;
 let currentUser = null;
 let statsChart = null;
+let gpsTrack = [];
+let trackLayer = null;
+let isCoverageOn = false;
 
 // --- AUTH ---
-async function checkAuth() {
-  const { data: { session } } = await supabase.auth.getSession();
-  currentUser = session?.user ?? null;
+function openAuthModal() { authModal.classList.add('active'); }
+function closeAuthModal() { authModal.classList.remove('active'); authError.textContent = ''; }
+authClose.addEventListener('click', closeAuthModal);
+authModal.addEventListener('click', (e) => { if (e.target === authModal) closeAuthModal(); });
+
+authBtn.addEventListener('click', () => {
+  if (currentUser) {
+    auth.signOut();
+  } else {
+    openAuthModal();
+  }
+});
+
+authSignin.addEventListener('click', async () => {
+  const email = authEmail.value.trim();
+  const password = authPassword.value.trim();
+  if (!email || !password) { authError.textContent = 'Enter email and password.'; return; }
+  try {
+    await signInWithEmailAndPassword(auth, email, password);
+    closeAuthModal();
+  } catch (err) {
+    authError.textContent = err.message;
+  }
+});
+
+authSignup.addEventListener('click', async () => {
+  const email = authEmail.value.trim();
+  const password = authPassword.value.trim();
+  if (!email || !password) { authError.textContent = 'Enter email and password.'; return; }
+  if (password.length < 6) { authError.textContent = 'Password must be at least 6 characters.'; return; }
+  try {
+    await createUserWithEmailAndPassword(auth, email, password);
+    closeAuthModal();
+  } catch (err) {
+    authError.textContent = err.message;
+  }
+});
+
+onAuthStateChanged(auth, (user) => {
+  currentUser = user;
   updateAuthUI();
   if (currentUser) goAdminBtn.style.display = 'inline-flex';
   else goAdminBtn.style.display = 'none';
-  return currentUser;
-}
+  if (map) loadPins();
+});
 
 function updateAuthUI() {
   if (currentUser) {
@@ -98,25 +162,6 @@ function updateAuthUI() {
     mapView.classList.add('public');
   }
 }
-
-authBtn.addEventListener('click', async () => {
-  if (currentUser) {
-    await supabase.auth.signOut();
-    currentUser = null;
-    updateAuthUI();
-    goAdminBtn.style.display = 'none';
-    if (map) { loadPins(); } // reload public view
-    status.textContent = '🔵 Signed out';
-  } else {
-    // Simple magic link sign-in
-    const email = prompt('Enter your email to sign in (magic link):');
-    if (email) {
-      const { error } = await supabase.auth.signInWithOtp({ email });
-      if (error) { alert('Error: ' + error.message); return; }
-      alert('Check your email for the magic link!');
-    }
-  }
-});
 
 // --- MODAL ---
 aboutBtn.addEventListener('click', () => modal.classList.add('active'));
@@ -152,7 +197,7 @@ backBtn.addEventListener('click', () => {
   showView('homeView');
 });
 
-// --- CAMERA ---
+// --- CAMERA (unchanged from previous) ---
 async function startCamera() {
   try {
     captureStatus.textContent = '📸 Requesting camera...';
@@ -250,12 +295,12 @@ function validateCrop() {
   if (cropStart && cropEnd) {
     const w = Math.abs(cropEnd.x - cropStart.x);
     const h = Math.abs(cropEnd.y - cropStart.y);
-    if (w < 10 || h < 10) { cropStatus.textContent = '⚠️ Selection too small, try again'; cropStart = null; cropEnd = null; drawCropOverlay(); }
+    if (w < 10 || h < 10) { cropStatus.textContent = '⚠️ Selection too small'; cropStart = null; cropEnd = null; drawCropOverlay(); }
     else { cropStatus.textContent = '✅ Ready. Tap "Crop & Upload"'; }
   }
 }
 
-// --- CONFIRM CROP & UPLOAD (with camera type) ---
+// --- CONFIRM CROP & UPLOAD ---
 confirmCropBtn.addEventListener('click', async () => {
   if (!cropStart || !cropEnd) { cropStatus.textContent = '⚠️ Drag a rectangle first!'; return; }
   const sx = Math.min(cropStart.x, cropEnd.x);
@@ -301,7 +346,20 @@ function getAccuratePosition() {
   });
 }
 
-// --- UPLOAD (with user_id and camera_type) ---
+// --- GPS track for coverage ---
+if (navigator.geolocation) {
+  navigator.geolocation.watchPosition(
+    (pos) => {
+      gpsTrack.push({ lat: pos.coords.latitude, lng: pos.coords.longitude, timestamp: Date.now() });
+      if (gpsTrack.length > 10000) gpsTrack.shift();
+      if (isCoverageOn && map) updateCoverage();
+    },
+    () => {},
+    { enableHighAccuracy: true, maximumAge: 5000 }
+  );
+}
+
+// --- UPLOAD (uses Firebase UID) ---
 async function uploadPhoto(blob, camType) {
   if (!currentUser) { alert('Please sign in first!'); return; }
   status.textContent = '📍 Getting GPS...';
@@ -331,7 +389,7 @@ async function uploadPhoto(blob, camType) {
         lat: pos.lat, lng: pos.lng, image_url: publicUrl, filename: filename,
         timestamp: new Date().toISOString(),
         camera_type: camType,
-        user_id: currentUser.id
+        user_id: currentUser.uid
       }]);
     if (insertError) throw insertError;
     status.textContent = `✅ Uploaded! (${pos.lat.toFixed(5)}, ${pos.lng.toFixed(5)})`;
@@ -358,7 +416,7 @@ async function geocodeAddress(query) {
   } catch (e) { return null; }
 }
 
-// --- ROUTE SCORER ---
+// --- ROUTE SCORER (kernel density) ---
 async function calculateRoute() {
   routeResult.innerHTML = '⏳ Geocoding...';
   const startAddr = routeStart.value.trim(), endAddr = routeEnd.value.trim();
@@ -373,29 +431,41 @@ async function calculateRoute() {
     const data = await resp.json();
     if (!data.routes || data.routes.length === 0) { routeResult.innerHTML = '❌ No route.'; return; }
     const routeLine = turf.lineString(data.routes[0].geometry.coordinates);
+    const totalLength = data.routes[0].distance;
+    let totalWeight = 0;
+    const bandwidth = 30;
+    allPins.forEach(p => {
+      const pt = turf.point([p.lng, p.lat]);
+      const distance = turf.pointToLineDistance(pt, routeLine, { units: 'meters' });
+      const weight = Math.exp(-(distance * distance) / (2 * bandwidth * bandwidth));
+      totalWeight += weight;
+    });
+    const density = (totalWeight / totalLength) * 100;
     const buffered = turf.buffer(routeLine, 50, { units: 'meters' });
-    let inside = 0;
-    allPins.forEach(p => { if (turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), buffered)) inside++; });
-    const total = allPins.length;
+    let countInside = 0;
+    allPins.forEach(p => {
+      if (turf.booleanPointInPolygon(turf.point([p.lng, p.lat]), buffered)) countInside++;
+    });
+
     routeResult.innerHTML = `
       <div><strong>📍 Start:</strong> ${startAddr}</div>
       <div><strong>📍 End:</strong> ${endAddr}</div>
-      <div>Route: <strong>${(data.routes[0].distance / 1000).toFixed(2)} km</strong></div>
-      <div>Cameras within 50m: <span class="route-result-score">${inside}</span></div>
-      <div>Total in DB: ${total}</div>
-      <div class="route-result-small">Density: ${total > 0 ? (inside / total * 100).toFixed(1) : 0}%</div>
+      <div>Route: <strong>${(totalLength / 1000).toFixed(2)} km</strong></div>
+      <div>Cameras within 50m: <strong>${countInside}</strong></div>
+      <div>Weighted exposure density: <span class="route-result-score">${density.toFixed(2)}</span> cameras/100m</div>
+      <div class="route-result-small">(Gaussian kernel, σ = 30m)</div>
     `;
   } catch (err) { routeResult.innerHTML = '❌ Error: ' + err.message; }
 }
+
 calcRouteBtn.addEventListener('click', calculateRoute);
 refreshRouteBtn.addEventListener('click', () => { if (routeView.classList.contains('active')) { loadPinsSilent(); routeResult.innerHTML = '⟳ Refreshed. ' + allPins.length + ' cameras.'; } });
 
 async function loadPinsSilent() {
   const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
-  if (!error) { allPins = data.filter(r => r.lat && r.lng).map(r => ({ lat: r.lat, lng: r.lng, imageUrl: r.image_url, timestamp: r.timestamp })); }
+  if (!error) { allPins = data.filter(r => r.lat && r.lng).map(r => ({ lat: r.lat, lng: r.lng, imageUrl: r.image_url, timestamp: r.timestamp, camera_type: r.camera_type })); }
 }
 
-// --- LOCATION BUTTONS ---
 function setLocationToInput(input) {
   if (!navigator.geolocation) { alert('No GPS.'); return; }
   navigator.geolocation.getCurrentPosition(
@@ -407,26 +477,56 @@ function setLocationToInput(input) {
 startLocBtn.addEventListener('click', () => setLocationToInput(routeStart));
 endLocBtn.addEventListener('click', () => setLocationToInput(routeEnd));
 
-// --- MAP ---
+// --- MAP (chill tiles, removed zoom controls) ---
 function initMap() {
-  map = L.map(mapContainer).setView([18.4861, -69.9312], 14);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', { attribution: '© OSM, CartoDB' }).addTo(map);
+  map = L.map(mapContainer, { zoomControl: false }).setView([18.4861, -69.9312], 14);
+  // Chill, light tile layer (CartoDB Voyager)
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
+    attribution: '© OpenStreetMap, CartoDB'
+  }).addTo(map);
+
   const clusterIcon = (cluster) => L.divIcon({
     html: `<div style="background:#2563eb;color:white;border-radius:50%;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-weight:bold;font-size:16px;box-shadow:0 0 0 3px #0a0a0a;">${cluster.getChildCount()}</div>`,
     className: '', iconSize: [40, 40]
   });
   markerCluster = L.markerClusterGroup({ iconCreateFunction: clusterIcon, spiderfyOnMaxZoom: true, maxClusterRadius: 50 });
   map.addLayer(markerCluster);
+
+  // Coverage toggle
+  const coverageToggle = L.Control.extend({
+    onAdd: function() {
+      const btn = L.DomUtil.create('button', 'coverage-btn');
+      btn.innerHTML = '📍 Coverage';
+      btn.style.cssText = 'background:rgba(20,20,30,0.8);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,0.08);color:white;padding:8px 16px;border-radius:30px;cursor:pointer;font-size:13px;margin:10px;';
+      btn.onclick = function() {
+        isCoverageOn = !isCoverageOn;
+        updateCoverage();
+        btn.innerHTML = isCoverageOn ? '📍 Hide Coverage' : '📍 Coverage';
+      };
+      return btn;
+    }
+  });
+  map.addControl(new coverageToggle());
+
   loadPins();
 }
 
+function updateCoverage() {
+  if (!map) return;
+  if (trackLayer) { map.removeLayer(trackLayer); trackLayer = null; }
+  if (!isCoverageOn || gpsTrack.length < 2) return;
+  const points = gpsTrack.map(p => [p.lat, p.lng]);
+  const polyline = L.polyline(points, { color: '#2563eb', weight: 2, opacity: 0.6, dashArray: '5,5' });
+  trackLayer = polyline.addTo(map);
+}
+
+// --- Load pins (public aggregation) ---
 async function loadPins() {
   if (!map) return;
   markerCluster.clearLayers();
   allPins = [];
 
   if (currentUser) {
-    // Full precision
     const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
     if (error) { console.error(error); return; }
     data.forEach((row) => {
@@ -437,11 +537,10 @@ async function loadPins() {
       markerCluster.addLayer(marker);
     });
   } else {
-    // Public: aggregated grid squares (privacy safe)
     const { data, error } = await supabase.rpc('get_public_heatmap');
     if (error) { console.error(error); return; }
     data.forEach((row) => {
-      allPins.push({ lat: row.lat, lng: row.lng }); // store for route scorer (approximate)
+      allPins.push({ lat: row.lat, lng: row.lng });
       const marker = L.marker([row.lat, row.lng], {
         icon: L.divIcon({ html: `${row.count}`, className: '', iconSize: [30, 30], iconAnchor: [15, 15] }),
         opacity: 0.7
@@ -458,6 +557,7 @@ async function loadPins() {
   if (isHeatmapOn) toggleHeatmap();
 }
 
+// --- HEATMAP ---
 function toggleHeatmap() {
   if (!map) return;
   if (heatLayer) { map.removeLayer(heatLayer); heatLayer = null; }
@@ -472,45 +572,40 @@ function toggleHeatmap() {
 }
 heatmapToggle.addEventListener('click', toggleHeatmap);
 
-// --- EXPORT (only for logged in) ---
-exportBtn.addEventListener('click', () => {
-  if (!currentUser) { alert('Sign in to export raw data.'); return; }
-  if (allPins.length === 0) { alert('No data.'); return; }
-  const features = allPins.map(p => ({ type: 'Feature', geometry: { type: 'Point', coordinates: [p.lng, p.lat] }, properties: { image_url: p.imageUrl, timestamp: p.timestamp } }));
-  const blob = new Blob([JSON.stringify({ type: 'FeatureCollection', features }, null, 2)], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a'); a.href = url; a.download = `cameras_${new Date().toISOString().slice(0,10)}.geojson`; a.click();
-  URL.revokeObjectURL(url);
-});
-
 // --- ADMIN PANEL ---
 async function loadAdminPanel() {
   if (!currentUser) return;
   const { data, error } = await supabase.from('intel').select('*').order('timestamp', { ascending: false });
   if (error) { console.error(error); return; }
-  // Stats
   const total = data.length;
   const dome = data.filter(r => r.camera_type === 'dome').length;
   const bullet = data.filter(r => r.camera_type === 'bullet').length;
   const alpr = data.filter(r => r.camera_type === 'alpr').length;
+  const cctv = data.filter(r => r.camera_type === 'cctv').length;
   statTotal.textContent = total;
   statDome.textContent = dome;
   statBullet.textContent = bullet;
   statAlpr.textContent = alpr;
 
-  // Chart
   const ctxChart = statsChartCanvas.getContext('2d');
   if (statsChart) statsChart.destroy();
+
+  const typeCounts = { dome:0, bullet:0, alpr:0, cctv:0, doorbell:0, traffic:0, unknown:0 };
+  data.forEach(r => { if (typeCounts[r.camera_type] !== undefined) typeCounts[r.camera_type]++; else typeCounts.unknown++; });
+
   statsChart = new Chart(ctxChart, {
     type: 'bar',
     data: {
-      labels: ['Dome', 'Bullet', 'ALPR', 'Doorbell', 'Traffic', 'Unknown'],
-      datasets: [{ label: 'Camera types', data: [dome, bullet, alpr, data.filter(r => r.camera_type === 'doorbell').length, data.filter(r => r.camera_type === 'traffic').length, data.filter(r => !r.camera_type || r.camera_type === 'unknown').length], backgroundColor: ['#2563eb','#60a5fa','#8b5cf6','#f59e0b','#10b981','#6b7280'] }]
+      labels: ['Dome', 'Bullet', 'ALPR', 'CCTV', 'Doorbell', 'Traffic', 'Unknown'],
+      datasets: [{
+        label: 'Camera types',
+        data: [typeCounts.dome, typeCounts.bullet, typeCounts.alpr, typeCounts.cctv, typeCounts.doorbell, typeCounts.traffic, typeCounts.unknown],
+        backgroundColor: ['#2563eb','#60a5fa','#8b5cf6','#10b981','#f59e0b','#ef4444','#6b7280']
+      }]
     },
     options: { plugins: { legend: { labels: { color: '#aaa' } } }, scales: { y: { beginAtZero: true, ticks: { color: '#888' } }, x: { ticks: { color: '#888' } } } }
   });
 
-  // Table
   adminTableBody.innerHTML = data.map(row => `
     <tr>
       <td><input type="checkbox" class="row-check" data-id="${row.id}" /></td>
@@ -523,7 +618,6 @@ async function loadAdminPanel() {
     </tr>
   `).join('');
 
-  // Delete handlers
   document.querySelectorAll('.delete-btn').forEach(btn => {
     btn.addEventListener('click', async () => {
       if (confirm('Delete this entry?')) {
@@ -534,7 +628,6 @@ async function loadAdminPanel() {
     });
   });
 
-  // Bulk delete
   bulkDeleteBtn.onclick = async () => {
     const checked = document.querySelectorAll('.row-check:checked');
     if (checked.length === 0) return;
@@ -553,7 +646,5 @@ async function loadAdminPanel() {
 
 refreshAdminBtn.addEventListener('click', loadAdminPanel);
 
-// --- INIT ---
-await checkAuth();
-status.textContent = '🔵 App ready. Sign in for full features.';
-console.log('✅ Surveillance Census v2 with Auth, Admin, Aggregation.');
+status.textContent = '🔵 App ready. Sign in with Firebase.';
+console.log('✅ Firebase Auth + chill map + no zoom controls.');

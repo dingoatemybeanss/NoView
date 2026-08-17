@@ -15,7 +15,6 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
   position: relative;
   overflow: hidden;
 }
-/* Scan line animation */
 #header::after {
   content: '';
   position: absolute;
@@ -99,7 +98,7 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 .home-btn.admin { background: rgba(139,92,246,0.15); border-color: rgba(139,92,246,0.2); }
 .home-btn.admin:hover { background: rgba(139,92,246,0.25); }
 
-/* CAPTURE, PREVIEW, CROP (same as before, but with icon updates) */
+/* CAPTURE, PREVIEW, CROP */
 #captureView { display: none; flex-direction: column; height: 100%; width: 100%; position: relative; background: #000; }
 #captureView.active { display: flex; }
 #captureView video { width: 100%; height: 100%; object-fit: cover; }
@@ -155,20 +154,23 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 /* MAP */
 #mapView { display: none; height: 100%; width: 100%; position: relative; }
 #mapView.active { display: block; }
-#map { height: 100%; width: 100%; }
-#heatmapToggle, #exportBtn {
-  position: absolute; bottom: 24px;
+#map { height: 100%; width: 100%; background: #f0f2f5; }
+#heatmapToggle {
+  position: absolute; bottom: 24px; left: 50%; transform: translateX(-50%);
   background: rgba(20,20,30,0.8); backdrop-filter: blur(8px);
   border: 1px solid rgba(255,255,255,0.08); color: white;
   padding: 10px 20px; border-radius: 30px; cursor: pointer;
   font-size: 14px; z-index: 1000; transition: 0.2s;
-  display:flex;align-items:center;gap:6px;
+  display:flex; align-items:center; gap:6px;
 }
-#heatmapToggle { left: 50%; transform: translateX(-50%); }
-#exportBtn { right: 16px; bottom: 24px; }
 #heatmapToggle.active { background: #2563eb; border-color: #2563eb; }
-#mapStatus { display:none; }
-#mapView.public #mapStatus { display:block; }
+#mapStatus {
+  position: absolute; bottom: 80px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,0.6); backdrop-filter: blur(4px);
+  padding: 4px 14px; border-radius: 16px; font-size: 11px; color: #ccc;
+  z-index: 1000; pointer-events: none; display: none;
+}
+#mapView.public #mapStatus { display: block; }
 
 /* ROUTE */
 #routeView { display: none; flex-direction: column; height: 100%; padding: 16px; background: #0a0a0a; gap: 12px; }
@@ -214,24 +216,52 @@ body { background: #0a0a0a; color: #eee; height: 100vh; display: flex; flex-dire
 #adminTable input[type="checkbox"] { accent-color:#2563eb; width:16px; height:16px; }
 #adminTable .delete-btn { background:#dc2626; border:none; color:white; padding:4px 12px; border-radius:6px; cursor:pointer; font-size:12px; }
 
-/* MODAL */
+/* AUTH MODAL (Firebase) */
+#authModal {
+  display: none; position: fixed; top:0; left:0; width:100%; height:100%;
+  background: rgba(0,0,0,0.7); backdrop-filter: blur(4px);
+  z-index: 99999; align-items: center; justify-content: center;
+}
+#authModal.active { display: flex; }
+#authModal .modal-content {
+  background: #1a1a1a; border-radius: 20px; padding: 32px;
+  max-width: 380px; width: 90%; border: 1px solid #2a2a2a;
+}
+#authModal h2 { margin-bottom: 16px; color: #eee; }
+#authModal input {
+  width: 100%; padding: 12px; border-radius: 10px;
+  border: 1px solid #333; background: #0a0a0a; color: white;
+  margin-bottom: 12px; font-size: 16px;
+}
+#authModal input:focus { outline: 2px solid #2563eb; border-color: transparent; }
+#authModal .auth-actions { display: flex; gap: 10px; margin-top: 8px; }
+#authModal .auth-actions button {
+  flex: 1; padding: 12px; border: none; border-radius: 30px;
+  font-weight: 600; cursor: pointer; font-size: 15px;
+}
+#authModal .auth-actions .signin { background: #2563eb; color: white; }
+#authModal .auth-actions .signup { background: #2a2a2a; border: 1px solid #444; color: white; }
+#authModal .auth-close {
+  float: right; font-size: 28px; color: #888; cursor: pointer;
+}
+#authModal .auth-close:hover { color: white; }
+#authModal .auth-error { color: #ef4444; font-size: 14px; margin-top: 8px; text-align: center; }
+
+/* ABOUT MODAL */
 .modal { display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); backdrop-filter:blur(4px); z-index:9999; align-items:center; justify-content:center; }
 .modal.active { display:flex; }
 .modal-content { background:#1a1a1a; border-radius:20px; padding:32px; max-width:500px; width:90%; border:1px solid #2a2a2a; position:relative; max-height:80vh; overflow-y:auto; }
 .modal-close { position:absolute; top:12px; right:18px; font-size:28px; color:#888; cursor:pointer; }
 .modal-close:hover { color:white; }
-.modal-content h2 { margin-bottom:16px; }
+.modal-content h2 { margin-bottom:16px; color:#eee; }
 .modal-content p { color:#aaa; line-height:1.6; margin-bottom:12px; }
 
-/* status bar */
 .status-bar { color: #888; font-size: 13px; padding: 8px 16px; background: #0a0a0a; border-top: 1px solid #1a1a1a; text-align: center; flex-shrink: 0; }
 
-/* Leaflet overrides */
 .custom-popup img { max-width: 200px; border-radius: 6px; margin-top: 4px; border: 1px solid #ddd; }
 .custom-popup { color: #111; font-size: 13px; }
 .marker-cluster-custom { background: #2563eb; border-radius: 50%; width: 40px; height: 40px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold; font-size: 16px; box-shadow: 0 0 0 3px #0a0a0a; }
 
-/* scrollbar */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: #0a0a0a; }
 ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 10px; }
